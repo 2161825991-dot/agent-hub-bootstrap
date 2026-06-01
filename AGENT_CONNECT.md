@@ -69,6 +69,19 @@ powershell -ExecutionPolicy Bypass -File "$env:TEMP\install-agent.ps1" -RawBase 
 powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.agent-hub\start-openclaw-agent.ps1"
 ```
 
+If the installer says an instance is already running, stop the old client and start the newly installed one:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.agent-hub\stop-openclaw-agent.ps1"
+powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.agent-hub\start-openclaw-agent.ps1"
+```
+
+You can also ask the installer to restart it:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "$env:TEMP\install-agent.ps1" -RawBase $raw -HubUrl "HUB_URL_HERE" -Token "TOKEN_HERE" -AgentId "AGENT_ID_HERE" -AgentName "AGENT_NAME_HERE" -Role "backend" -UseCli auto -Restart
+```
+
 ## Fast Path For macOS/Linux
 
 Replace `HUB_URL_HERE`, `TOKEN_HERE`, `AGENT_ID_HERE`, and `AGENT_NAME_HERE`.
@@ -106,6 +119,7 @@ If the client starts but does not answer work:
 3. If you see `[WinError 2] 系统找不到指定的文件`, the client is connected but Windows cannot find the OpenClaw CLI executable.
 4. On Windows, run `Get-Command openclaw -ErrorAction SilentlyContinue` or `where.exe openclaw`. If nothing is returned, either install OpenClaw CLI or re-run the installer with `-UseCli 0` for connection-only mode.
 5. If OpenClaw CLI exists but has a different path, re-run the installer with `-UseCli 1 -OpenClawBin "C:\path\to\openclaw.exe"`.
+6. If the installer reports that an existing client is already running, the connection is probably alive but old code/config is still active. Run `stop-openclaw-agent.ps1`, then `start-openclaw-agent.ps1`.
 
 ## Machine-Readable Summary
 

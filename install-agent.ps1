@@ -12,7 +12,8 @@ param(
   [string]$InstallDir = "$env:USERPROFILE\.agent-hub",
   [string]$HubUrls = "",
   [string]$UseCli = "auto",
-  [string]$OpenClawBin = "openclaw"
+  [string]$OpenClawBin = "openclaw",
+  [switch]$Restart
 )
 
 $ErrorActionPreference = "Stop"
@@ -54,6 +55,7 @@ foreach ($file in $clientFiles) {
 }
 
 $startScript = Join-Path $InstallDir "start-openclaw-agent.ps1"
+$stopScript = Join-Path $InstallDir "stop-openclaw-agent.ps1"
 $envFile = Join-Path $InstallDir "agenthub.env"
 
 @"
@@ -85,8 +87,33 @@ Set-Location "$InstallDir"
 python openclaw_agent.py
 "@ | Set-Content -Path $startScript -Encoding UTF8
 
+@"
+`$ErrorActionPreference = "Continue"
+`$matches = Get-CimInstance Win32_Process |
+  Where-Object { `$_.CommandLine -and `$_.CommandLine -like "*openclaw_agent.py*" }
+
+if (-not `$matches) {
+  Write-Host "No running Agent Hub OpenClaw client found."
+  exit 0
+}
+
+foreach (`$proc in `$matches) {
+  Write-Host "Stopping Agent Hub OpenClaw client PID `$(`$proc.ProcessId)"
+  Stop-Process -Id `$proc.ProcessId -Force
+}
+"@ | Set-Content -Path $stopScript -Encoding UTF8
+
 Write-Host ""
 Write-Host "Agent Hub client installed to: $InstallDir"
 Write-Host "Config file: $envFile"
+Write-Host "Stop command:"
+Write-Host "powershell -ExecutionPolicy Bypass -File `"$stopScript`""
 Write-Host "Start command:"
 Write-Host "powershell -ExecutionPolicy Bypass -File `"$startScript`""
+
+if ($Restart) {
+  Write-Host ""
+  Write-Host "Restart requested. Stopping existing client, then starting the new client..."
+  powershell -ExecutionPolicy Bypass -File "$stopScript"
+  powershell -ExecutionPolicy Bypass -File "$startScript"
+}

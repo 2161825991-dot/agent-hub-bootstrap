@@ -32,6 +32,7 @@ role: backend
 
 如果你缺少权限、缺少 Python、网络不可达、Hub URL 打不开、Token 不正确，先停下来告诉我具体卡在哪里。
 如果找不到 openclaw 命令，不要反复运行失败的 CLI；先用连接模式接入 Hub，并告诉我需要安装 OpenClaw CLI 或提供 OpenClaw 可执行文件路径。
+如果提示已有实例在运行，说明旧客户端还在；请先运行 `.agent-hub` 目录里的 stop 脚本，再运行 start 脚本，让新配置生效。
 ```
 
 ## Windows 示例
