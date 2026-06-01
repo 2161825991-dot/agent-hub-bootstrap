@@ -42,6 +42,12 @@ https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/AGENT_
 https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/connect.json
 ```
 
+可以直接发给其它 AI/Agent 的中文接入模板：
+
+```text
+https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/REMOTE_AGENT_PROMPT.md
+```
+
 然后在 Windows PowerShell 里执行：
 
 ```powershell
