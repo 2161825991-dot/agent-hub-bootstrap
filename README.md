@@ -30,6 +30,18 @@ remote_agent_example.py
 - Token
 - Agent ID，例如 `openclaw-windows`
 
+如果操作方是另一个 AI/Agent，先让它读取：
+
+```text
+https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/AGENT_CONNECT.md
+```
+
+机器可读入口：
+
+```text
+https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/connect.json
+```
+
 然后在 Windows PowerShell 里执行：
 
 ```powershell

@@ -1,0 +1,44 @@
+{
+  "purpose": "connect_remote_agent_to_agent_hub",
+  "guide_url": "https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/AGENT_CONNECT.md",
+  "raw_base": "https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main",
+  "install": {
+    "windows": {
+      "install_script": "install-agent.ps1",
+      "install_dir": "%USERPROFILE%\\.agent-hub",
+      "start_script": "%USERPROFILE%\\.agent-hub\\start-openclaw-agent.ps1"
+    },
+    "unix": {
+      "install_script": "install-agent.sh",
+      "install_dir": "~/.agent-hub",
+      "start_script": "~/.agent-hub/start-openclaw-agent.sh"
+    }
+  },
+  "required_inputs": [
+    "hub_url",
+    "token",
+    "agent_id",
+    "agent_name",
+    "role"
+  ],
+  "allowed_write_locations": {
+    "windows": [
+      "%USERPROFILE%\\.agent-hub\\"
+    ],
+    "unix": [
+      "~/.agent-hub/"
+    ]
+  },
+  "forbidden_actions": [
+    "do not upload token to GitHub",
+    "do not modify Agent Hub server",
+    "do not delete user project files",
+    "do not reset existing repositories"
+  ],
+  "verification": [
+    "client reports Hub online",
+    "client registers successfully",
+    "Agent Hub app shows agent online",
+    "Agent Hub ping test returns agent.pong"
+  ]
+}
