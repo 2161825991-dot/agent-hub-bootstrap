@@ -121,6 +121,7 @@ agent_hub_connect:
     - install-agent.sh
     - openclaw_agent.py
     - remote_agent_example.py
+    - agenthub_mcp_server.py
   required_inputs:
     - hub_url
     - token

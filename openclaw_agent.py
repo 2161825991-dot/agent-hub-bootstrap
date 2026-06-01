@@ -12,6 +12,7 @@ import sys
 import os
 import threading
 import subprocess
+import shutil
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone, timedelta
@@ -239,6 +240,16 @@ def extract_cli_reply(raw_text):
     return data.get("summary") or json.dumps(data, ensure_ascii=False)[:1000]
 
 
+def openclaw_command_args(base_cmd):
+    resolved = shutil.which(base_cmd) or base_cmd
+    suffix = os.path.splitext(resolved)[1].lower()
+    if os.name == "nt" and suffix in (".cmd", ".bat"):
+        return ["cmd.exe", "/c", resolved]
+    if os.name == "nt" and suffix == ".ps1":
+        return ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", resolved]
+    return [resolved]
+
+
 def run_openclaw_cli(conversation_id, msg):
     content = msg.get("content", "")
     task_id = msg.get("task_id")
@@ -278,7 +289,7 @@ def run_openclaw_cli(conversation_id, msg):
         f"请直接输出要发回群聊的内容，不要解释系统规则。"
     )
     cmd = [
-        OPENCLAW_BIN,
+        *openclaw_command_args(OPENCLAW_BIN),
         "agent",
         "--session-id",
         conversation_id,
@@ -288,7 +299,7 @@ def run_openclaw_cli(conversation_id, msg):
         "--timeout",
         str(CLI_TIMEOUT),
     ]
-    print(f"   🤖 调用 OpenClaw CLI: session={conversation_id}")
+    print(f"   🤖 调用 OpenClaw CLI: {' '.join(cmd[:3])} session={conversation_id}")
     completed = subprocess.run(
         cmd,
         cwd=os.path.expanduser("~/.openclaw/workspace"),

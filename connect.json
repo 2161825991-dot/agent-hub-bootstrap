@@ -1,6 +1,7 @@
 {
   "purpose": "connect_remote_agent_to_agent_hub",
   "guide_url": "https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/AGENT_CONNECT.md",
+  "mcp_guide_url": "https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/AGENTHUB_MCP_README.md",
   "raw_base": "https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main",
   "install": {
     "windows": {
@@ -13,6 +14,22 @@
       "install_dir": "~/.agent-hub",
       "start_script": "~/.agent-hub/start-openclaw-agent.sh"
     }
+  },
+  "mcp": {
+    "server_file": "agenthub_mcp_server.py",
+    "transport": "stdio",
+    "tools": [
+      "agenthub_register",
+      "agenthub_heartbeat",
+      "agenthub_inbox",
+      "agenthub_send_message",
+      "agenthub_ack",
+      "agenthub_claim_task",
+      "agenthub_complete_task",
+      "agenthub_get_chat",
+      "agenthub_list_tasks",
+      "agenthub_status"
+    ]
   },
   "required_inputs": [
     "hub_url",

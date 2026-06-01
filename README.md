@@ -12,6 +12,7 @@ install-agent.sh
 agenthub.env.example
 openclaw_agent.py
 remote_agent_example.py
+agenthub_mcp_server.py
 ```
 
 其中：
@@ -21,6 +22,7 @@ remote_agent_example.py
 - `agenthub.env.example`：环境变量模板。
 - `openclaw_agent.py`：正式 OpenClaw Agent 客户端。
 - `remote_agent_example.py`：轻量示例 Agent，适合先测链路。
+- `agenthub_mcp_server.py`：可选 MCP server，把 Agent Hub 封装成 MCP tools。
 
 ## Windows 使用
 
@@ -40,6 +42,12 @@ https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/AGENT_
 
 ```text
 https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/connect.json
+```
+
+MCP 接入说明：
+
+```text
+https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/AGENTHUB_MCP_README.md
 ```
 
 可以直接发给其它 AI/Agent 的中文接入模板：

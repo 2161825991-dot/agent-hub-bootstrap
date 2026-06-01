@@ -90,6 +90,7 @@ PY
 
 download_file "$RAW_BASE/openclaw_agent.py" "$INSTALL_DIR/openclaw_agent.py"
 download_file "$RAW_BASE/remote_agent_example.py" "$INSTALL_DIR/remote_agent_example.py"
+download_file "$RAW_BASE/agenthub_mcp_server.py" "$INSTALL_DIR/agenthub_mcp_server.py"
 
 cat > "$INSTALL_DIR/agenthub.env" <<EOF
 AGENT_HUB_URL=$HUB_URL
@@ -122,6 +123,7 @@ python3 openclaw_agent.py
 EOF
 
 chmod +x "$INSTALL_DIR/start-openclaw-agent.sh"
+chmod +x "$INSTALL_DIR/agenthub_mcp_server.py"
 
 echo ""
 echo "Agent Hub client installed to: $INSTALL_DIR"
