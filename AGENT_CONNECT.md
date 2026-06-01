@@ -10,8 +10,9 @@ You must:
 
 1. Download the Agent Hub client from this GitHub repository.
 2. Write only the local Agent Hub client configuration on this computer.
-3. Start the client.
-4. Verify that Agent Hub sees this agent online.
+3. Detect whether OpenClaw CLI is available.
+4. Start the client.
+5. Verify that Agent Hub sees this agent online.
 
 ## Do Not Modify
 
@@ -64,7 +65,7 @@ Replace `HUB_URL_HERE`, `TOKEN_HERE`, `AGENT_ID_HERE`, and `AGENT_NAME_HERE`.
 ```powershell
 $raw="https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main"
 irm "$raw/install-agent.ps1" -OutFile "$env:TEMP\install-agent.ps1"
-powershell -ExecutionPolicy Bypass -File "$env:TEMP\install-agent.ps1" -RawBase $raw -HubUrl "HUB_URL_HERE" -Token "TOKEN_HERE" -AgentId "AGENT_ID_HERE" -AgentName "AGENT_NAME_HERE" -Role "backend"
+powershell -ExecutionPolicy Bypass -File "$env:TEMP\install-agent.ps1" -RawBase $raw -HubUrl "HUB_URL_HERE" -Token "TOKEN_HERE" -AgentId "AGENT_ID_HERE" -AgentName "AGENT_NAME_HERE" -Role "backend" -UseCli auto
 powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.agent-hub\start-openclaw-agent.ps1"
 ```
 
@@ -75,7 +76,7 @@ Replace `HUB_URL_HERE`, `TOKEN_HERE`, `AGENT_ID_HERE`, and `AGENT_NAME_HERE`.
 ```bash
 RAW="https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main"
 curl -fsSL "$RAW/install-agent.sh" -o /tmp/install-agent.sh
-bash /tmp/install-agent.sh --raw-base "$RAW" --hub-url "HUB_URL_HERE" --token "TOKEN_HERE" --agent-id "AGENT_ID_HERE" --agent-name "AGENT_NAME_HERE" --role backend
+bash /tmp/install-agent.sh --raw-base "$RAW" --hub-url "HUB_URL_HERE" --token "TOKEN_HERE" --agent-id "AGENT_ID_HERE" --agent-name "AGENT_NAME_HERE" --role backend --use-cli auto
 ~/.agent-hub/start-openclaw-agent.sh
 ```
 
@@ -102,6 +103,9 @@ If the client starts but does not answer work:
 
 1. Use "测试连接" first. This checks the lightweight inbox and ack path.
 2. If ping works but task processing fails, the problem is likely OpenClaw CLI/model configuration, not Agent Hub networking.
+3. If you see `[WinError 2] 系统找不到指定的文件`, the client is connected but Windows cannot find the OpenClaw CLI executable.
+4. On Windows, run `Get-Command openclaw -ErrorAction SilentlyContinue` or `where.exe openclaw`. If nothing is returned, either install OpenClaw CLI or re-run the installer with `-UseCli 0` for connection-only mode.
+5. If OpenClaw CLI exists but has a different path, re-run the installer with `-UseCli 1 -OpenClawBin "C:\path\to\openclaw.exe"`.
 
 ## Machine-Readable Summary
 

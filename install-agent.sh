@@ -9,6 +9,8 @@ AGENT_ID="openclaw-unix"
 AGENT_NAME="OpenClaw Unix"
 ROLE="backend"
 INSTALL_DIR="$HOME/.agent-hub"
+USE_CLI="auto"
+OPENCLAW_BIN="openclaw"
 
 usage() {
   cat <<'EOF'
@@ -24,6 +26,8 @@ Options:
   --agent-name NAME    Display name.
   --role ROLE          Agent role.
   --install-dir DIR    Install directory.
+  --use-cli VALUE      1, 0, or auto. Default: auto.
+  --openclaw-bin PATH  OpenClaw CLI command or absolute path. Default: openclaw.
 EOF
 }
 
@@ -37,6 +41,8 @@ while [[ $# -gt 0 ]]; do
     --agent-name) AGENT_NAME="$2"; shift 2 ;;
     --role) ROLE="$2"; shift 2 ;;
     --install-dir) INSTALL_DIR="$2"; shift 2 ;;
+    --use-cli) USE_CLI="$2"; shift 2 ;;
+    --openclaw-bin) OPENCLAW_BIN="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage; exit 1 ;;
   esac
@@ -51,6 +57,15 @@ RAW_BASE="${RAW_BASE%/}"
 HUB_URL="${HUB_URL%/}"
 if [[ -z "$HUB_URLS" ]]; then
   HUB_URLS="$HUB_URL"
+fi
+if [[ "$USE_CLI" == "auto" ]]; then
+  if command -v "$OPENCLAW_BIN" >/dev/null 2>&1; then
+    USE_CLI="1"
+  else
+    USE_CLI="0"
+    echo "OpenClaw CLI not found: $OPENCLAW_BIN"
+    echo "The client will connect to Agent Hub only. Re-run with --use-cli 1 --openclaw-bin /path/to/openclaw after installing OpenClaw CLI."
+  fi
 fi
 
 mkdir -p "$INSTALL_DIR"
@@ -85,8 +100,8 @@ AGENT_HUB_NAME=$AGENT_NAME
 AGENT_HUB_ROLE=$ROLE
 AGENT_HUB_TIMEOUT=10
 AGENT_HUB_RECONNECT_INTERVAL=5
-OPENCLAW_USE_CLI=1
-OPENCLAW_BIN=openclaw
+OPENCLAW_USE_CLI=$USE_CLI
+OPENCLAW_BIN=$OPENCLAW_BIN
 EOF
 
 cat > "$INSTALL_DIR/start-openclaw-agent.sh" <<EOF
@@ -101,8 +116,8 @@ export AGENT_HUB_NAME="$AGENT_NAME"
 export AGENT_HUB_ROLE="$ROLE"
 export AGENT_HUB_TIMEOUT="10"
 export AGENT_HUB_RECONNECT_INTERVAL="5"
-export OPENCLAW_USE_CLI="1"
-export OPENCLAW_BIN="openclaw"
+export OPENCLAW_USE_CLI="$USE_CLI"
+export OPENCLAW_BIN="$OPENCLAW_BIN"
 python3 openclaw_agent.py
 EOF
 

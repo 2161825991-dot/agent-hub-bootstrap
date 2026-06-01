@@ -13,8 +13,9 @@ https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/AGENT_
 只允许做这些事：
 1. 下载连接文档指定的 Agent Hub 客户端文件。
 2. 写入当前电脑本地的 .agent-hub 配置目录。
-3. 启动本机 Agent Hub 客户端。
-4. 启动后告诉我是否已在线，并等待我在 Hub 里点击“测试连接”。
+3. 检查本机是否能找到 OpenClaw CLI。
+4. 启动本机 Agent Hub 客户端。
+5. 启动后告诉我是否已在线，并等待我在 Hub 里点击“测试连接”。
 
 不要做这些事：
 1. 不要修改或删除当前电脑上的其它项目文件。
@@ -30,6 +31,7 @@ agent_name: AGENT_NAME_HERE
 role: backend
 
 如果你缺少权限、缺少 Python、网络不可达、Hub URL 打不开、Token 不正确，先停下来告诉我具体卡在哪里。
+如果找不到 openclaw 命令，不要反复运行失败的 CLI；先用连接模式接入 Hub，并告诉我需要安装 OpenClaw CLI 或提供 OpenClaw 可执行文件路径。
 ```
 
 ## Windows 示例

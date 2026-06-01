@@ -10,7 +10,9 @@ param(
   [string]$AgentName = "OpenClaw Windows",
   [string]$Role = "backend",
   [string]$InstallDir = "$env:USERPROFILE\.agent-hub",
-  [string]$HubUrls = ""
+  [string]$HubUrls = "",
+  [string]$UseCli = "auto",
+  [string]$OpenClawBin = "openclaw"
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,6 +30,15 @@ $HubUrl = Normalize-Url $HubUrl
 $RawBase = Normalize-Url $RawBase
 if (-not $HubUrls) {
   $HubUrls = $HubUrl
+}
+if ($UseCli -eq "auto") {
+  if (Get-Command $OpenClawBin -ErrorAction SilentlyContinue) {
+    $UseCli = "1"
+  } else {
+    $UseCli = "0"
+    Write-Host "OpenClaw CLI not found: $OpenClawBin"
+    Write-Host "The client will connect to Agent Hub only. Re-run with -UseCli 1 -OpenClawBin path\\to\\openclaw.exe after installing OpenClaw CLI."
+  }
 }
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
@@ -53,8 +64,8 @@ AGENT_HUB_NAME=$AgentName
 AGENT_HUB_ROLE=$Role
 AGENT_HUB_TIMEOUT=10
 AGENT_HUB_RECONNECT_INTERVAL=5
-OPENCLAW_USE_CLI=1
-OPENCLAW_BIN=openclaw
+OPENCLAW_USE_CLI=$UseCli
+OPENCLAW_BIN=$OpenClawBin
 "@ | Set-Content -Path $envFile -Encoding UTF8
 
 @"
@@ -68,8 +79,8 @@ Set-Location "$InstallDir"
 `$env:AGENT_HUB_ROLE="$Role"
 `$env:AGENT_HUB_TIMEOUT="10"
 `$env:AGENT_HUB_RECONNECT_INTERVAL="5"
-`$env:OPENCLAW_USE_CLI="1"
-`$env:OPENCLAW_BIN="openclaw"
+`$env:OPENCLAW_USE_CLI="$UseCli"
+`$env:OPENCLAW_BIN="$OpenClawBin"
 python openclaw_agent.py
 "@ | Set-Content -Path $startScript -Encoding UTF8
 
