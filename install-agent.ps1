@@ -5,7 +5,7 @@ param(
   [Parameter(Mandatory=$true)]
   [string]$Token,
 
-  [string]$RawBase = "https://raw.githubusercontent.com/YOUR_NAME/YOUR_REPO/main",
+  [string]$RawBase = "https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main",
   [string]$AgentId = "openclaw-windows",
   [string]$AgentName = "OpenClaw Windows",
   [string]$Role = "backend",

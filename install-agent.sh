@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-RAW_BASE="https://raw.githubusercontent.com/YOUR_NAME/YOUR_REPO/main"
+RAW_BASE="https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main"
 HUB_URL=""
 HUB_URLS=""
 TOKEN=""

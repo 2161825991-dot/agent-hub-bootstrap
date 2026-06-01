@@ -33,7 +33,7 @@ remote_agent_example.py
 然后在 Windows PowerShell 里执行：
 
 ```powershell
-$raw="https://raw.githubusercontent.com/YOUR_NAME/YOUR_REPO/main"
+$raw="https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main"
 irm "$raw/install-agent.ps1" -OutFile "$env:TEMP\install-agent.ps1"
 powershell -ExecutionPolicy Bypass -File "$env:TEMP\install-agent.ps1" `
   -RawBase $raw `
@@ -53,7 +53,7 @@ powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.agent-hub\start-open
 ## macOS/Linux 使用
 
 ```bash
-RAW="https://raw.githubusercontent.com/YOUR_NAME/YOUR_REPO/main"
+RAW="https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main"
 curl -fsSL "$RAW/install-agent.sh" -o /tmp/install-agent.sh
 bash /tmp/install-agent.sh \
   --raw-base "$RAW" \
