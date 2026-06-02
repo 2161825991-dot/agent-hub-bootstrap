@@ -1,5 +1,7 @@
 {
   "purpose": "connect_remote_agent_to_agent_hub",
+  "start_here_for_ai_url": "https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/START_HERE_FOR_AI.md",
+  "operations_url": "https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/AGENT_OPERATIONS.md",
   "guide_url": "https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/AGENT_CONNECT.md",
   "mcp_guide_url": "https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/AGENTHUB_MCP_README.md",
   "mcp_quickstart_url": "https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/MCP_QUICKSTART.md",

@@ -2,6 +2,21 @@
 
 这个目录用于放到 GitHub，方便其它电脑一条命令下载 Agent Hub 客户端文件并接入本机 Hub。
 
+## AI 先读这里
+
+如果你是另一个 AI/Agent，请先读取：
+
+```text
+https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/START_HERE_FOR_AI.md
+```
+
+这个文件会告诉你：
+
+- 什么能改、什么不能改。
+- MCP 和后台客户端怎么选。
+- Windows/macOS/Linux 分别怎么安装。
+- 连接后怎么注册、收消息、发消息、ack、排错。
+
 ## 推荐仓库内容
 
 把下面这些文件上传到同一个 GitHub 仓库根目录：
@@ -24,6 +39,8 @@ agenthub_mcp_server.py
 - `remote_agent_example.py`：轻量示例 Agent，适合先测链路。
 - `agenthub_mcp_server.py`：MCP server，把 Agent Hub 封装成标准 MCP tools。
 - `AGENTHUB_MCP_README.md`：给支持 MCP 的远程 AI/Agent 使用的接入说明。
+- `START_HERE_FOR_AI.md`：AI 总入口，远程 AI 应先读这个文件。
+- `AGENT_OPERATIONS.md`：AI 接入后如何认领、发消息、@user、ack、协作。
 - `MCP_QUICKSTART.md`：后续接入其它电脑时看的最短操作说明。
 - `WINDOWS_MCP_AGENT_PROMPT.md`：可以直接发给 Windows AI 的 MCP 接入模板。
 - `mcp-config.template.json`：MCP 配置模板；真实安装时脚本会生成带参数的 `agenthub-mcp-config.json`。
