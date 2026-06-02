@@ -24,6 +24,9 @@ agenthub_mcp_server.py
 - `remote_agent_example.py`：轻量示例 Agent，适合先测链路。
 - `agenthub_mcp_server.py`：MCP server，把 Agent Hub 封装成标准 MCP tools。
 - `AGENTHUB_MCP_README.md`：给支持 MCP 的远程 AI/Agent 使用的接入说明。
+- `MCP_QUICKSTART.md`：后续接入其它电脑时看的最短操作说明。
+- `WINDOWS_MCP_AGENT_PROMPT.md`：可以直接发给 Windows AI 的 MCP 接入模板。
+- `mcp-config.template.json`：MCP 配置模板；真实安装时脚本会生成带参数的 `agenthub-mcp-config.json`。
 
 ## Windows 使用
 
@@ -49,6 +52,18 @@ MCP 接入说明：
 
 ```text
 https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/AGENTHUB_MCP_README.md
+```
+
+MCP 快速接入：
+
+```text
+https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/MCP_QUICKSTART.md
+```
+
+直接发给 Windows AI 的模板：
+
+```text
+https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/WINDOWS_MCP_AGENT_PROMPT.md
 ```
 
 安装脚本会自动生成 MCP 配置：

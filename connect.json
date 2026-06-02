@@ -2,6 +2,9 @@
   "purpose": "connect_remote_agent_to_agent_hub",
   "guide_url": "https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/AGENT_CONNECT.md",
   "mcp_guide_url": "https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/AGENTHUB_MCP_README.md",
+  "mcp_quickstart_url": "https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/MCP_QUICKSTART.md",
+  "windows_mcp_prompt_url": "https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/WINDOWS_MCP_AGENT_PROMPT.md",
+  "mcp_config_template_url": "https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/mcp-config.template.json",
   "raw_base": "https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main",
   "install": {
     "windows": {

@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "agenthub": {
+      "command": "python",
+      "args": [
+        "%USERPROFILE%\\.agent-hub\\agenthub_mcp_server.py"
+      ],
+      "env": {
+        "AGENT_HUB_URL": "HUB_URL_HERE",
+        "AGENT_HUB_URLS": "HUB_URLS_HERE",
+        "AGENT_HUB_TOKEN": "TOKEN_HERE"
+      }
+    }
+  }
+}
