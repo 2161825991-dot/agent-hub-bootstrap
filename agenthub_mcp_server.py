@@ -17,10 +17,36 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
-DEFAULT_HUB_URL = os.environ.get("AGENT_HUB_URL", "http://127.0.0.1:8765").rstrip("/")
+ENV_PATH = ROOT / "agenthub.env"
 TOKEN_PATH = ROOT / ".agent_hub_token"
-DEFAULT_TOKEN = os.environ.get("AGENT_HUB_TOKEN") or (
-    TOKEN_PATH.read_text(encoding="utf-8").strip() if TOKEN_PATH.exists() else ""
+
+
+def read_env_file(path):
+    values = {}
+    if not path.exists():
+        return values
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip('"')
+    return values
+
+
+FILE_ENV = read_env_file(ENV_PATH)
+DEFAULT_HUB_URL = (os.environ.get("AGENT_HUB_URL") or FILE_ENV.get("AGENT_HUB_URL") or "http://127.0.0.1:8765").rstrip("/")
+DEFAULT_HUB_URLS = [
+    url.strip().rstrip("/")
+    for url in (os.environ.get("AGENT_HUB_URLS") or FILE_ENV.get("AGENT_HUB_URLS") or DEFAULT_HUB_URL).split(",")
+    if url.strip()
+]
+if DEFAULT_HUB_URL not in DEFAULT_HUB_URLS:
+    DEFAULT_HUB_URLS.insert(0, DEFAULT_HUB_URL)
+DEFAULT_TOKEN = (
+    os.environ.get("AGENT_HUB_TOKEN")
+    or FILE_ENV.get("AGENT_HUB_TOKEN")
+    or (TOKEN_PATH.read_text(encoding="utf-8").strip() if TOKEN_PATH.exists() else "")
 )
 
 
@@ -140,6 +166,71 @@ TOOLS = [
         "description": "Get Agent Hub status, agents, and delivery counts.",
         "inputSchema": {"type": "object", "properties": {}},
     },
+    {
+        "name": "agenthub_list_agents",
+        "description": "List registered agents with online, paused, pending, and dead-letter status.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "agenthub_ping_agent",
+        "description": "Send a lightweight ping to an online agent to verify inbox/ack delivery.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"agent_id": {"type": "string"}},
+            "required": ["agent_id"],
+        },
+    },
+    {
+        "name": "agenthub_create_task",
+        "description": "Create a group task/chat and deliver the first message to selected participants.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "text": {"type": "string"},
+                "role": {"type": "string"},
+                "priority": {"type": "string"},
+                "participants": {"type": "array", "items": {"type": "string"}},
+                "auto_mode": {"type": "string", "enum": ["manual", "balanced", "autonomous"]},
+                "agent_policy": {"type": "string", "enum": ["quiet", "mentions", "team"]},
+                "proactive_enabled": {"type": "boolean"},
+                "message_limit": {"type": "integer", "minimum": 5, "maximum": 200},
+            },
+            "required": ["title", "text"],
+        },
+    },
+    {
+        "name": "agenthub_update_task_settings",
+        "description": "Update a group/task collaboration policy.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "integer"},
+                "auto_mode": {"type": "string", "enum": ["manual", "balanced", "autonomous"]},
+                "agent_policy": {"type": "string", "enum": ["quiet", "mentions", "team"]},
+                "proactive_enabled": {"type": "boolean"},
+                "message_limit": {"type": "integer", "minimum": 5, "maximum": 200},
+            },
+            "required": ["task_id"],
+        },
+    },
+    {
+        "name": "agenthub_list_decisions",
+        "description": "List user decision requests created when agents @user.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"status": {"type": ["string", "null"]}},
+        },
+    },
+    {
+        "name": "agenthub_resolve_decision",
+        "description": "Mark a user decision request resolved.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"decision_id": {"type": "integer"}},
+            "required": ["decision_id"],
+        },
+    },
 ]
 
 
@@ -152,21 +243,24 @@ class McpError(Exception):
 
 
 def hub_request(method, path, body=None):
-    url = DEFAULT_HUB_URL + path
     headers = {"Content-Type": "application/json"}
     if DEFAULT_TOKEN:
         headers["Authorization"] = f"Bearer {DEFAULT_TOKEN}"
     data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            raw = resp.read().decode("utf-8")
-            return json.loads(raw) if raw else {}
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise McpError(-32001, f"Agent Hub HTTP {exc.code}: {detail[:1000]}")
-    except Exception as exc:
-        raise McpError(-32002, f"Agent Hub request failed: {exc}")
+    last_error = None
+    for base_url in DEFAULT_HUB_URLS:
+        url = base_url + path
+        req = urllib.request.Request(url, data=data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                raw = resp.read().decode("utf-8")
+                return json.loads(raw) if raw else {}
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise McpError(-32001, f"Agent Hub HTTP {exc.code}: {detail[:1000]}")
+        except Exception as exc:
+            last_error = exc
+    raise McpError(-32002, f"Agent Hub request failed for all URLs ({', '.join(DEFAULT_HUB_URLS)}): {last_error}")
 
 
 def text_content(value):
@@ -236,6 +330,43 @@ def call_tool(name, args):
 
     if name == "agenthub_status":
         return hub_request("GET", "/status")
+
+    if name == "agenthub_list_agents":
+        return hub_request("GET", "/api/agents")
+
+    if name == "agenthub_ping_agent":
+        agent_id = urllib.parse.quote(args["agent_id"])
+        return hub_request("POST", f"/api/agents/{agent_id}/ping", {})
+
+    if name == "agenthub_create_task":
+        body = {
+            "title": args["title"],
+            "text": args["text"],
+            "role": args.get("role") or "general",
+            "priority": args.get("priority") or "normal",
+            "participants": args.get("participants") or [],
+            "auto_mode": args.get("auto_mode") or "balanced",
+            "agent_policy": args.get("agent_policy") or "team",
+            "proactive_enabled": args.get("proactive_enabled", True),
+            "message_limit": args.get("message_limit") or 40,
+        }
+        return hub_request("POST", "/api/tasks", body)
+
+    if name == "agenthub_update_task_settings":
+        body = {
+            "auto_mode": args.get("auto_mode") or "balanced",
+            "agent_policy": args.get("agent_policy") or "team",
+            "proactive_enabled": args.get("proactive_enabled", True),
+            "message_limit": args.get("message_limit") or 40,
+        }
+        return hub_request("POST", f"/api/tasks/{int(args['task_id'])}/settings", body)
+
+    if name == "agenthub_list_decisions":
+        status = args.get("status") or "open"
+        return hub_request("GET", f"/api/decisions?{urllib.parse.urlencode({'status': status})}")
+
+    if name == "agenthub_resolve_decision":
+        return hub_request("POST", f"/api/decisions/{int(args['decision_id'])}/resolve", {})
 
     raise McpError(-32602, f"Unknown tool: {name}")
 

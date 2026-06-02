@@ -57,6 +57,7 @@ foreach ($file in $clientFiles) {
 $startScript = Join-Path $InstallDir "start-openclaw-agent.ps1"
 $stopScript = Join-Path $InstallDir "stop-openclaw-agent.ps1"
 $envFile = Join-Path $InstallDir "agenthub.env"
+$mcpConfigFile = Join-Path $InstallDir "agenthub-mcp-config.json"
 
 @"
 AGENT_HUB_URL=$HubUrl
@@ -103,13 +104,31 @@ foreach (`$proc in `$matches) {
 }
 "@ | Set-Content -Path $stopScript -Encoding UTF8
 
+$mcpConfig = [ordered]@{
+  mcpServers = [ordered]@{
+    agenthub = [ordered]@{
+      command = "python"
+      args = @((Join-Path $InstallDir "agenthub_mcp_server.py"))
+      env = [ordered]@{
+        AGENT_HUB_URL = $HubUrl
+        AGENT_HUB_URLS = $HubUrls
+        AGENT_HUB_TOKEN = $Token
+      }
+    }
+  }
+}
+$mcpConfig | ConvertTo-Json -Depth 8 | Set-Content -Path $mcpConfigFile -Encoding UTF8
+
 Write-Host ""
 Write-Host "Agent Hub client installed to: $InstallDir"
 Write-Host "Config file: $envFile"
+Write-Host "MCP config file: $mcpConfigFile"
 Write-Host "Stop command:"
 Write-Host "powershell -ExecutionPolicy Bypass -File `"$stopScript`""
 Write-Host "Start command:"
 Write-Host "powershell -ExecutionPolicy Bypass -File `"$startScript`""
+Write-Host "MCP server command:"
+Write-Host "python `"$InstallDir\agenthub_mcp_server.py`""
 
 if ($Restart) {
   Write-Host ""

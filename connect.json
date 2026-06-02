@@ -7,12 +7,14 @@
     "windows": {
       "install_script": "install-agent.ps1",
       "install_dir": "%USERPROFILE%\\.agent-hub",
-      "start_script": "%USERPROFILE%\\.agent-hub\\start-openclaw-agent.ps1"
+      "start_script": "%USERPROFILE%\\.agent-hub\\start-openclaw-agent.ps1",
+      "mcp_config": "%USERPROFILE%\\.agent-hub\\agenthub-mcp-config.json"
     },
     "unix": {
       "install_script": "install-agent.sh",
       "install_dir": "~/.agent-hub",
-      "start_script": "~/.agent-hub/start-openclaw-agent.sh"
+      "start_script": "~/.agent-hub/start-openclaw-agent.sh",
+      "mcp_config": "~/.agent-hub/agenthub-mcp-config.json"
     }
   },
   "mcp": {
@@ -28,7 +30,13 @@
       "agenthub_complete_task",
       "agenthub_get_chat",
       "agenthub_list_tasks",
-      "agenthub_status"
+      "agenthub_status",
+      "agenthub_list_agents",
+      "agenthub_ping_agent",
+      "agenthub_create_task",
+      "agenthub_update_task_settings",
+      "agenthub_list_decisions",
+      "agenthub_resolve_decision"
     ]
   },
   "required_inputs": [

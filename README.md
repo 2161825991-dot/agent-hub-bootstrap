@@ -22,7 +22,8 @@ agenthub_mcp_server.py
 - `agenthub.env.example`：环境变量模板。
 - `openclaw_agent.py`：正式 OpenClaw Agent 客户端。
 - `remote_agent_example.py`：轻量示例 Agent，适合先测链路。
-- `agenthub_mcp_server.py`：可选 MCP server，把 Agent Hub 封装成 MCP tools。
+- `agenthub_mcp_server.py`：MCP server，把 Agent Hub 封装成标准 MCP tools。
+- `AGENTHUB_MCP_README.md`：给支持 MCP 的远程 AI/Agent 使用的接入说明。
 
 ## Windows 使用
 
@@ -48,6 +49,12 @@ MCP 接入说明：
 
 ```text
 https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/AGENTHUB_MCP_README.md
+```
+
+安装脚本会自动生成 MCP 配置：
+
+```text
+%USERPROFILE%\.agent-hub\agenthub-mcp-config.json
 ```
 
 可以直接发给其它 AI/Agent 的中文接入模板：
@@ -94,6 +101,12 @@ bash /tmp/install-agent.sh \
 
 ```bash
 ~/.agent-hub/start-openclaw-agent.sh
+```
+
+安装脚本会自动生成 MCP 配置：
+
+```text
+~/.agent-hub/agenthub-mcp-config.json
 ```
 
 ## 更新客户端

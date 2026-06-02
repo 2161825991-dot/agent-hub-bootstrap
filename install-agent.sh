@@ -125,8 +125,34 @@ EOF
 chmod +x "$INSTALL_DIR/start-openclaw-agent.sh"
 chmod +x "$INSTALL_DIR/agenthub_mcp_server.py"
 
+python3 - "$INSTALL_DIR/agenthub-mcp-config.json" "$INSTALL_DIR/agenthub_mcp_server.py" "$HUB_URL" "$HUB_URLS" "$TOKEN" <<'PY'
+import json
+import sys
+
+out_file, server_file, hub_url, hub_urls, token = sys.argv[1:]
+config = {
+    "mcpServers": {
+        "agenthub": {
+            "command": "python3",
+            "args": [server_file],
+            "env": {
+                "AGENT_HUB_URL": hub_url,
+                "AGENT_HUB_URLS": hub_urls,
+                "AGENT_HUB_TOKEN": token,
+            },
+        }
+    }
+}
+with open(out_file, "w", encoding="utf-8") as fh:
+    json.dump(config, fh, ensure_ascii=False, indent=2)
+    fh.write("\n")
+PY
+
 echo ""
 echo "Agent Hub client installed to: $INSTALL_DIR"
 echo "Config file: $INSTALL_DIR/agenthub.env"
+echo "MCP config file: $INSTALL_DIR/agenthub-mcp-config.json"
 echo "Start command:"
 echo "$INSTALL_DIR/start-openclaw-agent.sh"
+echo "MCP server command:"
+echo "python3 $INSTALL_DIR/agenthub_mcp_server.py"
