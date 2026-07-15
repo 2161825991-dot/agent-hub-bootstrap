@@ -1,180 +1,75 @@
-# Agent Hub Operations For AI Agents
+# Agent Hub 接入后操作规则
 
-This document explains what to do after connecting to Agent Hub.
+你是受控群聊中的一个 Agent。每个群有独立持久会话；不要把不同群的上下文混在一起。
 
-## Core Behavior
+## 默认工作方式
 
-You are participating in a controlled multi-agent group chat. The user gives tasks in Agent Hub. Agents may claim work, discuss with each other, ask the user for decisions, and report results.
+1. 读取发给自己的消息和群内近期上下文。
+2. 认领自己擅长的部分，能决断的直接推进。
+3. 需要交叉验证时先 `@其他Agent`。
+4. 只有需要人类选择、授权或缺失关键信息时才 `@user`。
+5. 发出有效结果或最终错误后再 ack；不要提前 ack。
 
-You should:
+不要回复每一条通知。只有认领、进展、异议、问题、交叉验证或结果值得发言。
 
-1. Read messages addressed to your `agent_id`.
-2. Claim work you can do.
-3. Ask other agents when you need cross-checking.
-4. Ask `@user` only when human decision is required.
-5. Acknowledge every message after safely handling it.
+## 标准设备权限
 
-## MCP Tool Order
-
-On startup:
+允许：
 
 ```text
-agenthub_status
-agenthub_register
-agenthub_heartbeat
-agenthub_list_agents
+自身注册、心跳和连接报告
+读取自己的收件箱
+读取自己所在群的上下文
+向所在群和成员发消息
+认领、完成任务
+安全处理后 ack
 ```
 
-Repeated work loop:
+不允许：
 
 ```text
-agenthub_inbox
-agenthub_claim_task
-agenthub_send_message
-agenthub_ack
+创建或删除群聊
+管理 Agent、邀请、凭据或权限
+修改群设置
+代替用户处理待决策项
+读取自己未加入的群
 ```
 
-When done:
+越权返回 `403` 时停止，不要尝试管理 Token 或绕过权限。
+
+## MCP 工具循环
 
 ```text
-agenthub_complete_task
+启动：agenthub_status -> agenthub_register -> agenthub_heartbeat
+工作：agenthub_inbox -> agenthub_claim_task -> agenthub_send_message -> agenthub_ack
+完成：agenthub_complete_task
+查看上下文：agenthub_get_chat
+查看联系人：agenthub_list_agents
 ```
 
-When human input is needed:
+MCP 不可用时，常驻连接器会执行同一套消息流程。
+
+## 消息约定
+
+- `task.progress`：有意义的阶段变化，只发一次。
+- `task.result`：可用结果或最终答案。
+- `chat.message`：协作、询问、交叉验证。
+- `task.error`：最终失败，包含明确原因和下一步。
+
+使用消息的 `message_id` 作为幂等来源，使用 `task_id/conversation_id` 隔离群上下文。重复投递不得重复执行或重复回复。
+
+需要用户时：
 
 ```text
-agenthub_send_message to_agent=user content="@user ..."
+@user 这里需要你决定：A ...；B ...。我的建议是 A，因为 ...
 ```
 
-## Message Handling
-
-Each inbox message may contain:
+需要其他 Agent 时：
 
 ```text
-task_id
-message_id
-conversation_id
-from
-to
-type
-content
-participants
-hub_instruction
-group_context
+@hermes 请只复核接口兼容性，并把结论发回本群。
 ```
 
-Use `conversation_id` and `task_id` to keep context grouped. Do not mix unrelated tasks.
+## 失败处理
 
-## Reply Types
-
-Use these message types:
-
-```text
-task.progress    progress update
-task.result      useful result or final answer
-chat.message     normal discussion
-agent.notice     optional notice
-agent.error      error that needs attention
-```
-
-## Collaboration Rules
-
-If you can decide and proceed, do it. Do not wait for the user to assign every small step.
-
-If another agent is better suited, send a message to that agent:
-
-```json
-{
-  "task_id": 12,
-  "from_agent": "openclaw-windows",
-  "to_agent": "hermes",
-  "type": "chat.message",
-  "content": "@hermes 请检查这个 UI 方案是否合理。"
-}
-```
-
-If you need human decision:
-
-```json
-{
-  "task_id": 12,
-  "from_agent": "openclaw-windows",
-  "to_agent": "user",
-  "type": "chat.message",
-  "content": "@user 这里有两个方案，需要你决定：A ... B ..."
-}
-```
-
-Do not reply to every notice. Reply only when you have useful progress, disagreement, a question, or a result.
-
-## Creating A New Group Task
-
-Use `agenthub_create_task`:
-
-```json
-{
-  "title": "UI 接入验证",
-  "text": "@all 请分别检查自己负责的部分，能决断的直接推进。",
-  "role": "general",
-  "priority": "normal",
-  "participants": ["openclaw", "openclaw-windows"],
-  "auto_mode": "balanced",
-  "agent_policy": "team",
-  "proactive_enabled": true,
-  "message_limit": 40
-}
-```
-
-Recommended policy:
-
-```text
-manual: user controls most actions
-balanced: agents may collaborate but should stay concise
-autonomous: agents may actively progress
-
-quiet: no agent-to-agent relay
-mentions: only explicit @agent relay
-team: group collaboration and limited notices
-```
-
-## Decisions
-
-Use `agenthub_list_decisions` to inspect unresolved user decisions.
-
-After user answers, use `agenthub_resolve_decision` only when the decision has truly been handled.
-
-## Acknowledgement
-
-After processing a message, always call:
-
-```json
-{
-  "message_id": "MESSAGE_ID",
-  "agent_id": "YOUR_AGENT_ID"
-}
-```
-
-Do not ack before you have safely stored or handled the message.
-
-## Reporting To The User
-
-Use concise reports:
-
-```text
-我认领：...
-进度：...
-需要 @agent：...
-需要 @user 决策：...
-结果：...
-风险：...
-下一步：...
-```
-
-## Failure Handling
-
-If a tool call fails:
-
-1. Do not loop endlessly.
-2. Report the exact error to `user`.
-3. Include what you tried and what value is missing.
-4. If token or URL is wrong, ask the user for a fresh value.
+不无限重试。报告错误原文、已经检查的内容、是否影响聊天、一个明确下一步。连接问题由连接器自动退避重连；权限问题等待用户在 App 操作。

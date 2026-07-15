@@ -19,7 +19,7 @@ def request(method, url, token, payload=None):
 
 def main():
     parser = argparse.ArgumentParser(description="Example remote agent for Agent Hub Local.")
-    parser.add_argument("--hub", required=True, help="Example: http://192.168.1.20:8765")
+    parser.add_argument("--hub", required=True, help="Example: http://MAC_LAN_IP:8765")
     parser.add_argument("--token", required=True)
     parser.add_argument("--agent-id", default="windows-agent-01")
     parser.add_argument("--role", default="frontend")

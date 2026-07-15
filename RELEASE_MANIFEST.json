@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "release": "2.0.0",
+  "released_at": "2026-07-15",
+  "sha256": {
+    "join-agenthub.ps1": "3190e88ee2a8983754337ec6ca732ac4f8579dc375202bdf176781bc0e4a09d9",
+    "join-agenthub.sh": "dd0a5ae6613ab79ccc7d7b648bb8d7c3a66e5aa2e116e88dc4b8d56df43d42d6",
+    "install-agent.ps1": "e9465f3122211eeb523351b090e306cfdbc363ced32faa65609fd1da4e758c34",
+    "install-agent.sh": "11f0adad9100c796bb0bbcb5261df824825305bf0812c713d5783fdc36c26200",
+    "agenthub_openclaw_connector.mjs": "6e2cd02bb20c4cb2edd18aa4293f9bb9eecd871d989f1835921d9a24324be6eb",
+    "agenthub_hermes_connector.py": "e21f86edfcd2a30c5a579338dabbf8788c2d900babff664456711a0ecb12b6af",
+    "agenthub_mcp_server.py": "e2060d4f826b97957b03d83863dc0919f104742ea94f96e6473fc6207aa6e8ba",
+    "START_HERE_FOR_INVITE.md": "f98cdf7cd28ba88544b3ba025c2e35fe2f05ba6d0e1fc40e27fd2695c77e2d6f",
+    "START_HERE_FOR_OPENCLAW.md": "34ee818c54a2fec0554394eb35cee3063f7f7e60754b8f75d7c853f2f6b93347",
+    "START_HERE_FOR_HERMES.md": "e277546f089a86efb0f4a93d114791ce54fc2e59b8916cb635627754d67e7788",
+    "AGENT_OPERATIONS.md": "adaf71bede8a560025279b92f8f2e575462f58021fc7037a7ea708d6d1d59256",
+    "connect.json": "d7fe7f038ee098e96a7c7b81dfb64654c39b2025d4b7c4ca59b13e97ca8f5aed"
+  }
+}

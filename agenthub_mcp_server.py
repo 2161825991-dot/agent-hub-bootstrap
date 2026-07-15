@@ -13,12 +13,14 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
 ENV_PATH = ROOT / "agenthub.env"
 TOKEN_PATH = ROOT / ".agent_hub_token"
+INSTALLATION_PATH = ROOT / "installation-id"
 
 
 def read_env_file(path):
@@ -126,6 +128,24 @@ TOOLS = [
             "type": "object",
             "properties": {"agent_id": {"type": "string"}},
             "required": ["agent_id"],
+        },
+    },
+    {
+        "name": "agenthub_connection_report",
+        "description": "Report this device's connector, MCP, runtime, and service state.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string"},
+                "stage": {"type": "string"},
+                "preflight_status": {"type": ["string", "null"]},
+                "mcp_status": {"type": ["string", "null"]},
+                "connector_status": {"type": ["string", "null"]},
+                "service_status": {"type": ["string", "null"]},
+                "last_error_code": {"type": ["string", "null"]},
+                "last_error": {"type": ["string", "null"]},
+            },
+            "required": ["agent_id", "stage"],
         },
     },
     {
@@ -287,6 +307,13 @@ TOOLS = [
     },
 ]
 
+TOOL_BY_NAME = {tool["name"]: tool for tool in TOOLS}
+PUBLIC_TOOL_NAMES = {
+    "agenthub_read_invite",
+    "agenthub_claim_invite",
+    "agenthub_register_from_invite",
+}
+
 
 class McpError(Exception):
     def __init__(self, code, message, data=None):
@@ -346,10 +373,14 @@ def write_connection_files(values):
     current.update({key: str(value) for key, value in values.items() if value is not None})
     ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
     ENV_PATH.write_text("".join(f"{key}={value}\n" for key, value in sorted(current.items())), encoding="utf-8")
+    try:
+        ENV_PATH.chmod(0o600)
+    except OSError:
+        pass
     config = {
         "mcpServers": {
-            "agenthub": {
-                "command": "python" if os.name == "nt" else "python3",
+            f"agenthub-{current.get('AGENT_HUB_ID', 'agent')}": {
+                "command": sys.executable,
                 "args": [str(Path(__file__).resolve())],
                 "env": {
                     key: current[key]
@@ -361,7 +392,28 @@ def write_connection_files(values):
     }
     config_path = ROOT / "agenthub-mcp-config.json"
     config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    try:
+        config_path.chmod(0o600)
+    except OSError:
+        pass
     return config_path
+
+
+def installation_id():
+    try:
+        existing = INSTALLATION_PATH.read_text(encoding="utf-8").strip()
+    except OSError:
+        existing = ""
+    if existing:
+        return existing
+    value = uuid.uuid4().hex
+    INSTALLATION_PATH.parent.mkdir(parents=True, exist_ok=True)
+    INSTALLATION_PATH.write_text(value + "\n", encoding="ascii")
+    try:
+        INSTALLATION_PATH.chmod(0o600)
+    except OSError:
+        pass
+    return value
 
 
 def claim_invite(args):
@@ -375,9 +427,11 @@ def claim_invite(args):
         "agent_id": agent_id,
         "name": name,
         "role": args.get("role") or DEFAULT_AGENT_ROLE,
-        "platform": args.get("platform"),
+        "platform": args.get("platform") or ("windows" if os.name == "nt" else "macos" if sys.platform == "darwin" else "linux"),
         "device_label": args.get("device_label"),
         "capabilities": args.get("capabilities"),
+        "installation_id": installation_id(),
+        "mode": "mcp",
     }
     result = hub_request(
         "POST",
@@ -430,6 +484,22 @@ def text_content(value):
     return [{"type": "text", "text": json.dumps(value, ensure_ascii=False, indent=2)}]
 
 
+def available_tool_names():
+    if not DEFAULT_TOKEN:
+        return PUBLIC_TOOL_NAMES
+    try:
+        capabilities = hub_request("GET", "/api/auth/capabilities")
+        allowed = set(capabilities.get("mcp_tools") or [])
+        return allowed | PUBLIC_TOOL_NAMES
+    except McpError:
+        return PUBLIC_TOOL_NAMES
+
+
+def available_tools():
+    names = available_tool_names()
+    return [tool for tool in TOOLS if tool["name"] in names]
+
+
 def call_tool(name, args):
     args = args or {}
     if name == "agenthub_read_invite":
@@ -455,6 +525,23 @@ def call_tool(name, args):
 
     if name == "agenthub_heartbeat":
         return hub_request("POST", f"/api/agents/{urllib.parse.quote(args['agent_id'])}/heartbeat", {})
+
+    if name == "agenthub_connection_report":
+        agent_id = urllib.parse.quote(args["agent_id"])
+        body = {
+            key: args.get(key)
+            for key in (
+                "stage",
+                "preflight_status",
+                "mcp_status",
+                "connector_status",
+                "service_status",
+                "last_error_code",
+                "last_error",
+            )
+            if args.get(key) is not None
+        }
+        return hub_request("POST", f"/api/agents/{agent_id}/connection-report", body)
 
     if name == "agenthub_inbox":
         limit = int(args.get("limit") or 50)
@@ -568,11 +655,14 @@ def handle_request(request):
         return {"jsonrpc": "2.0", "id": req_id, "result": {}}
 
     if method == "tools/list":
-        return {"jsonrpc": "2.0", "id": req_id, "result": {"tools": TOOLS}}
+        return {"jsonrpc": "2.0", "id": req_id, "result": {"tools": available_tools()}}
 
     if method == "tools/call":
         params = request.get("params", {})
-        result = call_tool(params.get("name"), params.get("arguments") or {})
+        name = params.get("name")
+        if name not in available_tool_names():
+            raise McpError(-32004, f"Tool is not allowed for the current Agent Hub credential: {name}")
+        result = call_tool(name, params.get("arguments") or {})
         return {"jsonrpc": "2.0", "id": req_id, "result": {"content": text_content(result), "isError": False}}
 
     if req_id is None:

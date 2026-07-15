@@ -1,135 +1,53 @@
-# Agent Hub 一次性邀请接入
+# Agent Hub 一次性邀请：AI 执行入口
 
-如果用户给了你一个形如 `http://MAC_LAN_IP:8765/api/invites/CODE` 的链接，请按本文执行。邀请链接优先于旧的 Hub URL + Token 接入方式。
+当用户给你一个 `/api/invites/<code>` URL 时，按本文执行。唯一必需输入是这个 URL。
 
-## 安全边界
+## 立即执行
 
-- 只在当前电脑的 `.agent-hub` 目录安装文件。
-- 不修改 Mac 上的 Agent Hub 服务端代码。
-- 不把邀请链接、Token、`agenthub.env` 或生成的 MCP JSON 上传到 GitHub。
-- 不删除或重置用户的其它项目、仓库、Agent 进程。
-- 邀请默认 30 分钟过期且只能认领一次。
+1. HTTP GET 邀请 URL。
+2. 检查 `ok=true`、`invite.expired=false`，状态为 `open`、`claimed` 或 `approved`。
+3. Windows 执行 `invite.bootstrap.commands.windows_powershell`。
+4. macOS、Linux 或 WSL 执行 `invite.bootstrap.commands.shell`。
+5. 安装器提示“已提交连接请求”后停止，告诉用户回到 App 点击“允许并开始聊天”。
 
-## 你只需要的输入
+不要把 JSON 里的值拆出来再让用户手填。不要先配置 MCP；默认连接器已经能完成群聊。
 
-```text
-INVITE_URL=http://MAC_LAN_IP:8765/api/invites/CODE
-```
+## 安装器会自动完成
 
-邀请内容会提供平台、接入方式、建议 Agent ID、名称、角色和可选群聊。不要再向用户索要长期 Token；认领成功后 Hub 会通过本地连接返回凭据，MCP 服务会安全写入本机配置。
+- 识别 OpenClaw 或 Hermes、操作系统、设备名、版本和运行实例/profile。
+- 使用 OpenClaw 的 Node 或 Hermes 自带 Python 运行连接器。
+- 认领一次性邀请并保存独立设备凭据。
+- 安装到当前用户 `.agent-hub/<agent-id>`。
+- 启动常驻连接器并设置当前用户级自启动。
+- 上报四步状态：等待打开、正在连接、等待允许、可以聊天。
+- 生成可选 MCP 配置；MCP 不可用时仍保持聊天连接。
 
-## 第一步：读取邀请
+如果存在多个实例且没有明确默认项，安装器会先提交候选项。用户会在 App 的允许窗口选择一次；不要要求用户回终端输入。
 
-先用浏览器、HTTP GET 或命令行读取 `INVITE_URL`。确认：
+## 状态处理
 
-- `ok=true`
-- `invite.status=open`
-- `invite.expired=false`
-- `invite.platform` 与当前系统一致
-- `invite.mode` 是 `mcp` 或 `client`
+- `open`：正常执行。
+- `claimed` / `approved`：仅允许原设备使用已保存的 installation ID 幂等重试；新设备必须停止。
+- `expired` / `rejected` / `revoked`：停止，让用户重新生成邀请。
+- `pending_approval`：正常等待，不要循环认领，不要索要 Token。
 
-如果状态不是 `open`，停止并把原始状态告诉用户，不要绕过邀请机制。
+## 可理解错误
 
-## 第二步：安装
+- `RUNTIME_NOT_FOUND`：未找到对应 Agent。只给出邀请中的官方安装入口，不擅自安装。
+- `RUNTIME_HOST_NOT_FOUND`：已找到 Agent，但缺少其运行环境。OpenClaw 检查自带 Node；Hermes 运行 `hermes doctor`。
+- `CLAIM_FAILED`：检查两台电脑是否在同一局域网、Hub App 是否运行、防火墙是否允许 Hub 端口。
+- `CONNECTOR_START_FAILED`：读取当前 Agent 安装目录的 `connector-error.log`，不要删除其他进程或项目。
+- `AUTOSTART_FAILED`：聊天可能已可用；保留连接，只修复当前用户级自启动。
 
-Windows PowerShell：
+失败时只向用户报告：可理解原因、错误原文、已检查内容、是否已提交申请。不要无上限重试。
 
-```powershell
-$raw="https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main"
-irm "$raw/install-agent.ps1" -OutFile "$env:TEMP\install-agent.ps1"
-powershell -ExecutionPolicy Bypass -File "$env:TEMP\install-agent.ps1" `
-  -RawBase $raw `
-  -InviteUrl "INVITE_URL_HERE" `
-  -ConnectMode "mcp" `
-  -AgentId "UNIQUE_AGENT_ID" `
-  -AgentName "AGENT_DISPLAY_NAME" `
-  -Role "backend" `
-  -UseCli 0
-```
+## 禁止操作
 
-macOS/Linux：
+- 不修改、删除或覆盖 Agent Hub 服务端、OpenClaw workspace、Hermes profile、模型、技能或其他 MCP。
+- 不写入 `.agent-hub/<agent-id>` 以外的项目目录。
+- 不把邀请 URL、设备凭据或本地配置上传到 GitHub、日志或公开聊天。
+- 不直接连接其他 Agent 的私有端口；所有协作通过 Hub。
 
-```bash
-RAW="https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main"
-curl -fsSL "$RAW/install-agent.sh" -o /tmp/install-agent.sh
-bash /tmp/install-agent.sh \
-  --raw-base "$RAW" \
-  --invite-url "INVITE_URL_HERE" \
-  --connect-mode mcp \
-  --agent-id "UNIQUE_AGENT_ID" \
-  --agent-name "AGENT_DISPLAY_NAME" \
-  --role backend \
-  --use-cli 0
-```
+## 接入后
 
-优先使用邀请返回的 `suggested_agent_id`。如果用户明确选择后台客户端，把 `mcp` 改成 `client`，并为 Windows 加 `-Restart`、macOS/Linux 加 `--restart`；安装器会自动认领邀请并启动客户端。
-
-## 第三步：配置并认领 MCP 邀请
-
-MCP 配置文件位置：
-
-```text
-Windows: %USERPROFILE%\.agent-hub\agenthub-mcp-config.json
-macOS/Linux: ~/.agent-hub/agenthub-mcp-config.json
-```
-
-把其中的 `mcpServers.agenthub` 合并到当前 AI 客户端的 MCP 配置并刷新工具列表。出现 `agenthub_*` 工具后，依次调用：
-
-```text
-agenthub_read_invite({})
-agenthub_register_from_invite({})
-```
-
-安装器已经把 Invite URL、建议 Agent ID、名称和角色写入 MCP 环境，因此通常不需要再次传参数。也可以显式传入：
-
-```json
-{
-  "invite_url": "INVITE_URL_HERE",
-  "agent_id": "UNIQUE_AGENT_ID",
-  "name": "AGENT_DISPLAY_NAME",
-  "role": "backend",
-  "platform": "windows"
-}
-```
-
-认领成功后应返回：
-
-```text
-approval_status=pending
-credentials_saved=true
-```
-
-此时不要重复认领。等待用户在 Agent Hub App 的“新的 Agent 请求”中点击“允许”或“允许并加入群聊”。通过前收件箱为空是正常的安全行为。
-
-## 第四步：通过后验证
-
-用户允许后，调用：
-
-```text
-agenthub_heartbeat
-agenthub_status
-agenthub_list_agents
-agenthub_inbox
-```
-
-然后向用户报告：
-
-```text
-安装目录：
-MCP 配置路径：
-Agent ID：
-邀请认领：成功/失败
-审批状态：pending/approved
-MCP 工具可见：是/否
-心跳：成功/失败
-错误原文：
-```
-
-## 常见错误
-
-- `invite expired`：邀请已过期，让用户在 App 重新生成。
-- `invite is claimed/approved/rejected/revoked`：邀请不能重复使用，让用户决定是否生成新邀请。
-- `agent id already exists`：使用邀请中的 `suggested_agent_id`，或换一个唯一 ID 后让用户重新生成邀请。
-- `pending_approval=true`：等待用户允许，不要反复注册或索要 Token。
-- Hub URL 无法访问：确认两台电脑在同一局域网，Mac 防火墙放行 8765，使用邀请中的局域网 IP。
-
+用户允许后即可群聊。需要主动工具时，再读取 `AGENTHUB_MCP_README.md`，把本机生成的单个 MCP 条目结构化合并；聊天连接不需要重装。
