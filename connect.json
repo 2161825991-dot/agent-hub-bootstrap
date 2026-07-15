@@ -1,5 +1,6 @@
 {
   "purpose": "connect_remote_agent_to_agent_hub",
+  "invite_guide_url": "https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/START_HERE_FOR_INVITE.md",
   "start_here_for_ai_url": "https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/START_HERE_FOR_AI.md",
   "operations_url": "https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/AGENT_OPERATIONS.md",
   "guide_url": "https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/AGENT_CONNECT.md",
@@ -26,6 +27,9 @@
     "server_file": "agenthub_mcp_server.py",
     "transport": "stdio",
     "tools": [
+      "agenthub_read_invite",
+      "agenthub_claim_invite",
+      "agenthub_register_from_invite",
       "agenthub_register",
       "agenthub_heartbeat",
       "agenthub_inbox",
@@ -44,13 +48,8 @@
       "agenthub_resolve_decision"
     ]
   },
-  "required_inputs": [
-    "hub_url",
-    "token",
-    "agent_id",
-    "agent_name",
-    "role"
-  ],
+  "preferred_inputs": ["invite_url"],
+  "legacy_required_inputs": ["hub_url", "token", "agent_id", "agent_name", "role"],
   "allowed_write_locations": {
     "windows": [
       "%USERPROFILE%\\.agent-hub\\"

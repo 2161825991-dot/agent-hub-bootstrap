@@ -8,7 +8,11 @@
       "env": {
         "AGENT_HUB_URL": "HUB_URL_HERE",
         "AGENT_HUB_URLS": "HUB_URLS_HERE",
-        "AGENT_HUB_TOKEN": "TOKEN_HERE"
+        "AGENT_HUB_INVITE_URL": "INVITE_URL_HERE",
+        "AGENT_HUB_INVITE_CODE": "INVITE_CODE_HERE",
+        "AGENT_HUB_ID": "UNIQUE_AGENT_ID",
+        "AGENT_HUB_NAME": "AGENT_DISPLAY_NAME",
+        "AGENT_HUB_ROLE": "backend"
       }
     }
   }

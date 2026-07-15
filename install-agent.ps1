@@ -1,11 +1,11 @@
 param(
-  [Parameter(Mandatory=$true)]
-  [string]$HubUrl,
-
-  [Parameter(Mandatory=$true)]
-  [string]$Token,
-
+  [string]$HubUrl = "",
+  [string]$Token = "",
   [string]$RawBase = "https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main",
+  [string]$InviteUrl = "",
+  [string]$InviteCode = "",
+  [ValidateSet("mcp", "client")]
+  [string]$ConnectMode = "mcp",
   [string]$AgentId = "openclaw-windows",
   [string]$AgentName = "OpenClaw Windows",
   [string]$Role = "backend",
@@ -27,10 +27,44 @@ function Download-File([string]$Url, [string]$OutFile) {
   Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing
 }
 
-$HubUrl = Normalize-Url $HubUrl
 $RawBase = Normalize-Url $RawBase
+if ($InviteUrl) {
+  $InviteUri = [Uri]$InviteUrl
+  if ($InviteUri.Scheme -notin @("http", "https")) {
+    throw "InviteUrl must use http or https."
+  }
+  if (-not $HubUrl) {
+    $HubUrl = $InviteUri.GetLeftPart([System.UriPartial]::Authority)
+  }
+  if (-not $InviteCode) {
+    $InviteCode = $InviteUri.Segments[-1].Trim("/")
+  }
+}
+if (-not $HubUrl) {
+  throw "Provide -InviteUrl, or provide both -HubUrl and -Token for advanced legacy setup."
+}
+$HubUrl = Normalize-Url $HubUrl
 if (-not $HubUrls) {
   $HubUrls = $HubUrl
+}
+if (-not $Token -and -not $InviteCode) {
+  throw "Missing Token or InviteCode."
+}
+if ($InviteUrl -and $ConnectMode -eq "client" -and -not $Token) {
+  $claimBody = @{
+    agent_id = $AgentId
+    name = $AgentName
+    role = $Role
+    platform = "windows"
+    mode = "client"
+    device_label = $env:COMPUTERNAME
+  } | ConvertTo-Json
+  Write-Host "Claiming one-time Agent Hub invite for background client mode..."
+  $claim = Invoke-RestMethod -Method Post -Uri "$InviteUrl/claim" -ContentType "application/json" -Body $claimBody
+  $Token = [string]$claim.token
+  if ($claim.hub_url) { $HubUrl = Normalize-Url ([string]$claim.hub_url) }
+  if ($claim.hub_urls) { $HubUrls = [string]$claim.hub_urls }
+  if (-not $Token) { throw "Invite claim succeeded without a Token." }
 }
 if ($UseCli -eq "auto") {
   if (Get-Command $OpenClawBin -ErrorAction SilentlyContinue) {
@@ -63,6 +97,9 @@ $mcpConfigFile = Join-Path $InstallDir "agenthub-mcp-config.json"
 AGENT_HUB_URL=$HubUrl
 AGENT_HUB_URLS=$HubUrls
 AGENT_HUB_TOKEN=$Token
+AGENT_HUB_INVITE_URL=$InviteUrl
+AGENT_HUB_INVITE_CODE=$InviteCode
+AGENT_HUB_CONNECT_MODE=$ConnectMode
 AGENT_HUB_ID=$AgentId
 AGENT_HUB_NAME=$AgentName
 AGENT_HUB_ROLE=$Role
@@ -78,6 +115,9 @@ Set-Location "$InstallDir"
 `$env:AGENT_HUB_URL="$HubUrl"
 `$env:AGENT_HUB_URLS="$HubUrls"
 `$env:AGENT_HUB_TOKEN="$Token"
+`$env:AGENT_HUB_INVITE_URL="$InviteUrl"
+`$env:AGENT_HUB_INVITE_CODE="$InviteCode"
+`$env:AGENT_HUB_CONNECT_MODE="$ConnectMode"
 `$env:AGENT_HUB_ID="$AgentId"
 `$env:AGENT_HUB_NAME="$AgentName"
 `$env:AGENT_HUB_ROLE="$Role"
@@ -85,6 +125,9 @@ Set-Location "$InstallDir"
 `$env:AGENT_HUB_RECONNECT_INTERVAL="5"
 `$env:OPENCLAW_USE_CLI="$UseCli"
 `$env:OPENCLAW_BIN="$OpenClawBin"
+if (-not `$env:AGENT_HUB_TOKEN) {
+  throw "Invite has not been claimed yet. Configure MCP and call agenthub_register_from_invite first."
+}
 python openclaw_agent.py
 "@ | Set-Content -Path $startScript -Encoding UTF8
 
@@ -104,16 +147,24 @@ foreach (`$proc in `$matches) {
 }
 "@ | Set-Content -Path $stopScript -Encoding UTF8
 
+$mcpEnv = [ordered]@{
+  AGENT_HUB_URL = $HubUrl
+  AGENT_HUB_URLS = $HubUrls
+  AGENT_HUB_ID = $AgentId
+  AGENT_HUB_NAME = $AgentName
+  AGENT_HUB_ROLE = $Role
+  AGENT_HUB_CONNECT_MODE = $ConnectMode
+}
+if ($Token) { $mcpEnv.AGENT_HUB_TOKEN = $Token }
+if ($InviteUrl) { $mcpEnv.AGENT_HUB_INVITE_URL = $InviteUrl }
+if ($InviteCode) { $mcpEnv.AGENT_HUB_INVITE_CODE = $InviteCode }
+
 $mcpConfig = [ordered]@{
   mcpServers = [ordered]@{
     agenthub = [ordered]@{
       command = "python"
       args = @((Join-Path $InstallDir "agenthub_mcp_server.py"))
-      env = [ordered]@{
-        AGENT_HUB_URL = $HubUrl
-        AGENT_HUB_URLS = $HubUrls
-        AGENT_HUB_TOKEN = $Token
-      }
+      env = $mcpEnv
     }
   }
 }
@@ -131,8 +182,18 @@ Write-Host "MCP server command:"
 Write-Host "python `"$InstallDir\agenthub_mcp_server.py`""
 
 if ($Restart) {
+  if (-not $Token) {
+    Write-Host ""
+    Write-Host "Restart skipped: this MCP invite must be claimed before the background client can start."
+    exit 0
+  }
   Write-Host ""
   Write-Host "Restart requested. Stopping existing client, then starting the new client..."
   powershell -ExecutionPolicy Bypass -File "$stopScript"
-  powershell -ExecutionPolicy Bypass -File "$startScript"
+  Start-Process -FilePath "powershell" -ArgumentList @(
+    "-NoProfile",
+    "-ExecutionPolicy", "Bypass",
+    "-File", $startScript
+  ) -WindowStyle Hidden
+  Write-Host "Background client started."
 }

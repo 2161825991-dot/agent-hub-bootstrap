@@ -7,6 +7,10 @@
 如果你是另一个 AI/Agent，请先读取：
 
 ```text
+收到一次性邀请链接时：
+https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/START_HERE_FOR_INVITE.md
+
+没有邀请、使用高级旧接入时：
 https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/START_HERE_FOR_AI.md
 ```
 
@@ -40,12 +44,17 @@ agenthub_mcp_server.py
 - `agenthub_mcp_server.py`：MCP server，把 Agent Hub 封装成标准 MCP tools。
 - `AGENTHUB_MCP_README.md`：给支持 MCP 的远程 AI/Agent 使用的接入说明。
 - `START_HERE_FOR_AI.md`：AI 总入口，远程 AI 应先读这个文件。
+- `START_HERE_FOR_INVITE.md`：一次性邀请总入口，推荐的新接入方式。
 - `AGENT_OPERATIONS.md`：AI 接入后如何认领、发消息、@user、ack、协作。
 - `MCP_QUICKSTART.md`：后续接入其它电脑时看的最短操作说明。
 - `WINDOWS_MCP_AGENT_PROMPT.md`：可以直接发给 Windows AI 的 MCP 接入模板。
 - `mcp-config.template.json`：MCP 配置模板；真实安装时脚本会生成带参数的 `agenthub-mcp-config.json`。
 
 ## Windows 使用
+
+推荐直接从 Agent Hub App 生成一次性邀请卡。对方只需收到邀请链接，不需要手工填写 Token；按 `START_HERE_FOR_INVITE.md` 安装并认领，Mac 端允许后即可接入。
+
+下面的 Hub URL + Token 方式保留为高级兼容入口。
 
 先在 Agent Hub 的 Agent 管理页复制：
 

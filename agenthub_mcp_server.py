@@ -26,7 +26,7 @@ def read_env_file(path):
     if not path.exists():
         return values
     for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
+        line = raw.lstrip("\ufeff").strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
@@ -43,14 +43,68 @@ DEFAULT_HUB_URLS = [
 ]
 if DEFAULT_HUB_URL not in DEFAULT_HUB_URLS:
     DEFAULT_HUB_URLS.insert(0, DEFAULT_HUB_URL)
+DEFAULT_HUB_URLS = list(dict.fromkeys(DEFAULT_HUB_URLS))
 DEFAULT_TOKEN = (
     os.environ.get("AGENT_HUB_TOKEN")
     or FILE_ENV.get("AGENT_HUB_TOKEN")
     or (TOKEN_PATH.read_text(encoding="utf-8").strip() if TOKEN_PATH.exists() else "")
 )
+DEFAULT_INVITE_URL = os.environ.get("AGENT_HUB_INVITE_URL") or FILE_ENV.get("AGENT_HUB_INVITE_URL") or ""
+DEFAULT_INVITE_CODE = os.environ.get("AGENT_HUB_INVITE_CODE") or FILE_ENV.get("AGENT_HUB_INVITE_CODE") or ""
+DEFAULT_AGENT_ID = os.environ.get("AGENT_HUB_ID") or FILE_ENV.get("AGENT_HUB_ID") or ""
+DEFAULT_AGENT_NAME = os.environ.get("AGENT_HUB_NAME") or FILE_ENV.get("AGENT_HUB_NAME") or DEFAULT_AGENT_ID
+DEFAULT_AGENT_ROLE = os.environ.get("AGENT_HUB_ROLE") or FILE_ENV.get("AGENT_HUB_ROLE") or "agent"
 
 
 TOOLS = [
+    {
+        "name": "agenthub_read_invite",
+        "description": "Read a one-time Agent Hub invite without requiring a long-lived token.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "invite_url": {"type": ["string", "null"]},
+                "invite_code": {"type": ["string", "null"]},
+                "hub_url": {"type": ["string", "null"]},
+            },
+        },
+    },
+    {
+        "name": "agenthub_claim_invite",
+        "description": "Claim a one-time invite, register the agent as pending approval, and save the returned connection credentials locally.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "invite_url": {"type": ["string", "null"]},
+                "invite_code": {"type": ["string", "null"]},
+                "hub_url": {"type": ["string", "null"]},
+                "agent_id": {"type": "string"},
+                "name": {"type": "string"},
+                "role": {"type": ["string", "null"]},
+                "platform": {"type": ["string", "null"]},
+                "device_label": {"type": ["string", "null"]},
+                "capabilities": {"type": ["object", "array", "null"]},
+            },
+        },
+    },
+    {
+        "name": "agenthub_register_from_invite",
+        "description": "Recommended one-step invite onboarding. Read, claim, register, persist MCP config, then wait for approval in the Hub app.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "invite_url": {"type": ["string", "null"]},
+                "invite_code": {"type": ["string", "null"]},
+                "hub_url": {"type": ["string", "null"]},
+                "agent_id": {"type": "string"},
+                "name": {"type": "string"},
+                "role": {"type": ["string", "null"]},
+                "platform": {"type": ["string", "null"]},
+                "device_label": {"type": ["string", "null"]},
+                "capabilities": {"type": ["object", "array", "null"]},
+            },
+        },
+    },
     {
         "name": "agenthub_register",
         "description": "Register an agent with Agent Hub and mark it online.",
@@ -242,13 +296,14 @@ class McpError(Exception):
         self.data = data
 
 
-def hub_request(method, path, body=None):
+def hub_request(method, path, body=None, use_auth=True, base_urls=None):
     headers = {"Content-Type": "application/json"}
-    if DEFAULT_TOKEN:
+    if use_auth and DEFAULT_TOKEN:
         headers["Authorization"] = f"Bearer {DEFAULT_TOKEN}"
     data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
     last_error = None
-    for base_url in DEFAULT_HUB_URLS:
+    candidates = base_urls or DEFAULT_HUB_URLS
+    for base_url in candidates:
         url = base_url + path
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
@@ -257,10 +312,118 @@ def hub_request(method, path, body=None):
                 return json.loads(raw) if raw else {}
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
+            if exc.code >= 500:
+                last_error = f"HTTP {exc.code}: {detail[:300]}"
+                continue
             raise McpError(-32001, f"Agent Hub HTTP {exc.code}: {detail[:1000]}")
         except Exception as exc:
             last_error = exc
-    raise McpError(-32002, f"Agent Hub request failed for all URLs ({', '.join(DEFAULT_HUB_URLS)}): {last_error}")
+    raise McpError(-32002, f"Agent Hub request failed for all URLs ({', '.join(candidates)}): {last_error}")
+
+
+def resolve_invite(args):
+    invite_url = (args.get("invite_url") or DEFAULT_INVITE_URL or "").strip()
+    invite_code = (args.get("invite_code") or DEFAULT_INVITE_CODE or "").strip()
+    hub_url = (args.get("hub_url") or "").strip().rstrip("/")
+    if invite_url:
+        parsed = urllib.parse.urlparse(invite_url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise McpError(-32602, "invite_url must be an http(s) URL")
+        parts = [urllib.parse.unquote(part) for part in parsed.path.split("/") if part]
+        if len(parts) < 3 or parts[-2] != "invites":
+            raise McpError(-32602, "invite_url must end with /api/invites/<code>")
+        invite_code = parts[-1]
+        hub_url = f"{parsed.scheme}://{parsed.netloc}"
+    if not invite_code:
+        raise McpError(-32602, "missing invite_url or invite_code")
+    if not hub_url:
+        hub_url = DEFAULT_HUB_URL
+    return hub_url.rstrip("/"), invite_code, f"{hub_url.rstrip('/')}/api/invites/{urllib.parse.quote(invite_code)}"
+
+
+def write_connection_files(values):
+    current = read_env_file(ENV_PATH)
+    current.update({key: str(value) for key, value in values.items() if value is not None})
+    ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
+    ENV_PATH.write_text("".join(f"{key}={value}\n" for key, value in sorted(current.items())), encoding="utf-8")
+    config = {
+        "mcpServers": {
+            "agenthub": {
+                "command": "python" if os.name == "nt" else "python3",
+                "args": [str(Path(__file__).resolve())],
+                "env": {
+                    key: current[key]
+                    for key in ("AGENT_HUB_URL", "AGENT_HUB_URLS", "AGENT_HUB_TOKEN", "AGENT_HUB_ID", "AGENT_HUB_NAME", "AGENT_HUB_ROLE")
+                    if current.get(key)
+                },
+            }
+        }
+    }
+    config_path = ROOT / "agenthub-mcp-config.json"
+    config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return config_path
+
+
+def claim_invite(args):
+    global DEFAULT_HUB_URL, DEFAULT_HUB_URLS, DEFAULT_TOKEN, DEFAULT_INVITE_URL, DEFAULT_INVITE_CODE
+    hub_url, invite_code, invite_url = resolve_invite(args)
+    agent_id = (args.get("agent_id") or DEFAULT_AGENT_ID or "").strip()
+    name = (args.get("name") or DEFAULT_AGENT_NAME or agent_id).strip()
+    if not agent_id or not name:
+        raise McpError(-32602, "missing agent_id/name; pass them to the tool or set AGENT_HUB_ID and AGENT_HUB_NAME")
+    body = {
+        "agent_id": agent_id,
+        "name": name,
+        "role": args.get("role") or DEFAULT_AGENT_ROLE,
+        "platform": args.get("platform"),
+        "device_label": args.get("device_label"),
+        "capabilities": args.get("capabilities"),
+    }
+    result = hub_request(
+        "POST",
+        f"/api/invites/{urllib.parse.quote(invite_code)}/claim",
+        body,
+        use_auth=False,
+        base_urls=[hub_url],
+    )
+    token = result.get("token") or ""
+    if not token:
+        raise McpError(-32003, "invite was claimed but Hub did not return connection credentials")
+    DEFAULT_HUB_URL = (result.get("hub_url") or hub_url).rstrip("/")
+    DEFAULT_HUB_URLS = [
+        item.strip().rstrip("/")
+        for item in (result.get("hub_urls") or DEFAULT_HUB_URL).split(",")
+        if item.strip()
+    ]
+    if DEFAULT_HUB_URL not in DEFAULT_HUB_URLS:
+        DEFAULT_HUB_URLS.insert(0, DEFAULT_HUB_URL)
+    DEFAULT_HUB_URLS = list(dict.fromkeys(DEFAULT_HUB_URLS))
+    DEFAULT_TOKEN = token
+    DEFAULT_INVITE_URL = invite_url
+    DEFAULT_INVITE_CODE = invite_code
+    config_path = write_connection_files(
+        {
+            "AGENT_HUB_URL": DEFAULT_HUB_URL,
+            "AGENT_HUB_URLS": ",".join(DEFAULT_HUB_URLS),
+            "AGENT_HUB_TOKEN": DEFAULT_TOKEN,
+            "AGENT_HUB_INVITE_URL": invite_url,
+            "AGENT_HUB_INVITE_CODE": invite_code,
+            "AGENT_HUB_ID": agent_id,
+            "AGENT_HUB_NAME": name,
+            "AGENT_HUB_ROLE": args.get("role") or DEFAULT_AGENT_ROLE,
+        }
+    )
+    return {
+        "ok": True,
+        "agent_id": result.get("agent_id") or agent_id,
+        "approval_status": result.get("approval_status") or "pending",
+        "message": "好友申请已提交。请在 Agent Hub App 中允许接入；通过前不会收到群聊消息。",
+        "hub_url": DEFAULT_HUB_URL,
+        "hub_urls": DEFAULT_HUB_URLS,
+        "credentials_saved": True,
+        "mcp_config_file": str(config_path),
+        "token_preview": f"{token[:6]}...{token[-4:]}" if len(token) > 12 else "saved",
+    }
 
 
 def text_content(value):
@@ -269,6 +432,18 @@ def text_content(value):
 
 def call_tool(name, args):
     args = args or {}
+    if name == "agenthub_read_invite":
+        hub_url, invite_code, _ = resolve_invite(args)
+        return hub_request(
+            "GET",
+            f"/api/invites/{urllib.parse.quote(invite_code)}",
+            use_auth=False,
+            base_urls=[hub_url],
+        )
+
+    if name in ("agenthub_claim_invite", "agenthub_register_from_invite"):
+        return claim_invite(args)
+
     if name == "agenthub_register":
         body = {
             "id": args["agent_id"],
@@ -382,7 +557,7 @@ def handle_request(request):
             "result": {
                 "protocolVersion": request.get("params", {}).get("protocolVersion", "2024-11-05"),
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "agenthub-mcp", "version": "0.1.0"},
+                "serverInfo": {"name": "agenthub-mcp", "version": "0.2.0"},
             },
         }
 

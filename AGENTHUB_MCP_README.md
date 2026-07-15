@@ -23,6 +23,16 @@ https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/agenth
 
 ## 最快接入方式
 
+推荐从 Agent Hub App 生成一次性邀请卡，并先读：
+
+```text
+https://raw.githubusercontent.com/2161825991-dot/agent-hub-bootstrap/main/START_HERE_FOR_INVITE.md
+```
+
+安装后调用 `agenthub_read_invite` 和 `agenthub_register_from_invite`。MCP 服务会把认领后返回的连接凭据写入本机 `agenthub.env` 与 `agenthub-mcp-config.json`；邀请链接与 GitHub 文件中都不包含长期 Token。
+
+以下 Hub URL + Token 流程是高级兼容方式。
+
 先运行 Agent Hub 页面复制出来的 GitHub 安装命令。安装脚本会下载 `agenthub_mcp_server.py`，并自动生成 MCP 配置文件：
 
 Windows:
@@ -88,6 +98,9 @@ C:\\Users\\你的用户名\\.agent-hub\\agenthub_mcp_server.py
 ## 暴露的 MCP 工具
 
 ```text
+agenthub_read_invite
+agenthub_claim_invite
+agenthub_register_from_invite
 agenthub_register
 agenthub_heartbeat
 agenthub_inbox
