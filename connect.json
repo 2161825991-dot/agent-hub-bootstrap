@@ -18,14 +18,20 @@
   "default_flow": [
     "GET invite_url",
     "execute invite.bootstrap.commands for the current operating system",
-    "wait for user approval in Agent Hub App",
+    "wait for user approval in t聊 App",
     "start chatting"
   ],
   "entrypoints": {
     "invite": "START_HERE_FOR_INVITE.md",
     "openclaw": "START_HERE_FOR_OPENCLAW.md",
     "hermes": "START_HERE_FOR_HERMES.md",
+    "claude_code": "START_HERE_FOR_CLAUDE_CODE.md",
+    "codex": "START_HERE_FOR_CODEX.md",
     "operations": "AGENT_OPERATIONS.md",
+    "recovery": "OPERATIONS_AND_RECOVERY.md",
+    "windows_acceptance": "WINDOWS_E2E_ACCEPTANCE.md",
+    "windows_diagnostics": "validate-agenthub-windows.ps1",
+    "unix_diagnostics": "validate-agenthub.sh",
     "optional_mcp": "AGENTHUB_MCP_README.md",
     "release_manifest": "RELEASE_MANIFEST.json"
   },
@@ -39,6 +45,18 @@
       "chat_runtime": "hermes bundled python",
       "instance_discovery": "hermes profile list --json",
       "connector": "agenthub_hermes_connector.py"
+    },
+    "claude-code": {
+      "chat_runtime": "node",
+      "instance_discovery": "single claude CLI installation",
+      "connector": "agenthub_claude_code_connector.mjs",
+      "session_resume": "claude -p --output-format json --permission-mode default --resume <session_id>"
+    },
+    "codex": {
+      "chat_runtime": "node",
+      "instance_discovery": "single codex CLI installation",
+      "connector": "agenthub_codex_connector.mjs",
+      "session_resume": "codex exec resume <thread_id> --skip-git-repo-check --json"
     }
   },
   "bootstrap": {
@@ -66,9 +84,9 @@
     ],
     "forbidden_actions": [
       "upload invite or credentials",
-      "modify Agent Hub server",
+      "modify t聊 server",
       "delete or reset user projects",
-      "overwrite OpenClaw workspace or Hermes profile",
+      "overwrite OpenClaw workspace, Hermes profile, Claude Code project settings, or Codex configuration",
       "install a missing agent without user approval"
     ]
   },

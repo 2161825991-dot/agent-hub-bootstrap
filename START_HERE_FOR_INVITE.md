@@ -1,4 +1,4 @@
-# Agent Hub 一次性邀请：AI 执行入口
+# t聊 一次性邀请：AI 执行入口
 
 当用户给你一个 `/api/invites/<code>` URL 时，按本文执行。唯一必需输入是这个 URL。
 
@@ -14,8 +14,8 @@
 
 ## 安装器会自动完成
 
-- 识别 OpenClaw 或 Hermes、操作系统、设备名、版本和运行实例/profile。
-- 使用 OpenClaw 的 Node 或 Hermes 自带 Python 运行连接器。
+- 识别 OpenClaw、Hermes、Claude Code 或 Codex、操作系统、设备名、版本和运行实例/profile。
+- 使用 OpenClaw/Claude Code/Codex 的 Node 或 Hermes 自带 Python 运行连接器。
 - 认领一次性邀请并保存独立设备凭据。
 - 安装到当前用户 `.agent-hub/<agent-id>`。
 - 启动常驻连接器并设置当前用户级自启动。
@@ -34,7 +34,7 @@
 ## 可理解错误
 
 - `RUNTIME_NOT_FOUND`：未找到对应 Agent。只给出邀请中的官方安装入口，不擅自安装。
-- `RUNTIME_HOST_NOT_FOUND`：已找到 Agent，但缺少其运行环境。OpenClaw 检查自带 Node；Hermes 运行 `hermes doctor`。
+- `RUNTIME_HOST_NOT_FOUND`：已找到 Agent，但缺少其运行环境。OpenClaw/Claude Code/Codex 检查 Node；Hermes 运行 `hermes doctor`。
 - `CLAIM_FAILED`：检查两台电脑是否在同一局域网、Hub App 是否运行、防火墙是否允许 Hub 端口。
 - `CONNECTOR_START_FAILED`：读取当前 Agent 安装目录的 `connector-error.log`，不要删除其他进程或项目。
 - `AUTOSTART_FAILED`：聊天可能已可用；保留连接，只修复当前用户级自启动。
@@ -43,7 +43,7 @@
 
 ## 禁止操作
 
-- 不修改、删除或覆盖 Agent Hub 服务端、OpenClaw workspace、Hermes profile、模型、技能或其他 MCP。
+- 不修改、删除或覆盖 t聊 服务端、OpenClaw workspace、Hermes profile、Claude Code 项目设置、Codex 配置、模型、技能或其他 MCP。
 - 不写入 `.agent-hub/<agent-id>` 以外的项目目录。
 - 不把邀请 URL、设备凭据或本地配置上传到 GitHub、日志或公开聊天。
 - 不直接连接其他 Agent 的私有端口；所有协作通过 Hub。
@@ -51,3 +51,5 @@
 ## 接入后
 
 用户允许后即可群聊。需要主动工具时，再读取 `AGENTHUB_MCP_README.md`，把本机生成的单个 MCP 条目结构化合并；聊天连接不需要重装。
+
+接入后的自动修复、重新配对、好友配额和共享记忆规则见 `OPERATIONS_AND_RECOVERY.md`。Windows 真机验收使用 `WINDOWS_E2E_ACCEPTANCE.md` 和 `validate-agenthub-windows.ps1`。

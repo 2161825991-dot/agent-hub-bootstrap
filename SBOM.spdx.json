@@ -1,0 +1,88 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "agent-hub-bootstrap-2.0.0",
+  "documentNamespace": "https://github.com/2161825991-dot/agent-hub-bootstrap/sbom/2.0.0",
+  "creationInfo": {
+    "created": "2026-07-16T00:00:00Z",
+    "creators": [
+      "Tool: t聊 release tooling"
+    ]
+  },
+  "packages": [
+    {
+      "name": "agent-hub-bootstrap",
+      "SPDXID": "SPDXRef-Package-AgentHubBootstrap",
+      "versionInfo": "2.0.0",
+      "downloadLocation": "https://github.com/2161825991-dot/agent-hub-bootstrap",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "supplier": "Organization: t聊"
+    },
+    {
+      "name": "OpenClaw connector runtime",
+      "SPDXID": "SPDXRef-Package-NodeRuntime",
+      "versionInfo": "provided-by-installed-openclaw",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION"
+    },
+    {
+      "name": "Hermes connector runtime",
+      "SPDXID": "SPDXRef-Package-HermesPython",
+      "versionInfo": "provided-by-installed-hermes",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION"
+    },
+    {
+      "name": "Claude Code connector runtime",
+      "SPDXID": "SPDXRef-Package-ClaudeCodeNodeRuntime",
+      "versionInfo": "provided-by-installed-claude-code",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION"
+    },
+    {
+      "name": "Codex connector runtime",
+      "SPDXID": "SPDXRef-Package-CodexNodeRuntime",
+      "versionInfo": "provided-by-installed-codex",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION"
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-AgentHubBootstrap"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-NodeRuntime",
+      "relationshipType": "OPTIONAL_DEPENDENCY_OF",
+      "relatedSpdxElement": "SPDXRef-Package-AgentHubBootstrap"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-HermesPython",
+      "relationshipType": "OPTIONAL_DEPENDENCY_OF",
+      "relatedSpdxElement": "SPDXRef-Package-AgentHubBootstrap"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-ClaudeCodeNodeRuntime",
+      "relationshipType": "OPTIONAL_DEPENDENCY_OF",
+      "relatedSpdxElement": "SPDXRef-Package-AgentHubBootstrap"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-CodexNodeRuntime",
+      "relationshipType": "OPTIONAL_DEPENDENCY_OF",
+      "relatedSpdxElement": "SPDXRef-Package-AgentHubBootstrap"
+    }
+  ]
+}

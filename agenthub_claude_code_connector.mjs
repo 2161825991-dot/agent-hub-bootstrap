@@ -10,21 +10,25 @@ import {fileURLToPath} from "node:url";
 import {setTimeout as sleep} from "node:timers/promises";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+
 const INSTALL_DIR = process.env.AGENT_HUB_INSTALL_DIR || HERE;
 const STATE_DIR = path.join(INSTALL_DIR, "state");
-const AGENT_ID = process.env.AGENT_HUB_ID || "openclaw";
-const AGENT_NAME = process.env.AGENT_HUB_NAME || "OpenClaw";
+const AGENT_KIND = process.env.AGENT_HUB_KIND === "codex" ? "codex" : "claude-code";
+const IS_CODEX = AGENT_KIND === "codex";
+const RUNTIME_LABEL = IS_CODEX ? "Codex" : "Claude Code";
+const AGENT_ID = process.env.AGENT_HUB_ID || AGENT_KIND;
+const AGENT_NAME = process.env.AGENT_HUB_NAME || RUNTIME_LABEL;
 const AGENT_ROLE = process.env.AGENT_HUB_ROLE || "agent";
 const TOKEN = process.env.AGENT_HUB_TOKEN || "";
-const OPENCLAW_BIN = process.env.OPENCLAW_BIN || "openclaw";
-let runtimeInstance = process.env.AGENT_HUB_RUNTIME_INSTANCE || "main";
+const RUNTIME_BIN = IS_CODEX ? (process.env.CODEX_BIN || "codex") : (process.env.CLAUDE_BIN || "claude");
+let runtimeInstance = process.env.AGENT_HUB_RUNTIME_INSTANCE || "default";
 const RUNTIME_VERSION = process.env.AGENT_HUB_RUNTIME_VERSION || "";
 const REQUEST_TIMEOUT_MS = Number(process.env.AGENT_HUB_TIMEOUT || 15) * 1000;
 const CLI_TIMEOUT_MS = Number(process.env.AGENT_HUB_CLI_TIMEOUT || 900) * 1000;
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const INBOX_INTERVAL_MS = 2_500;
 const CONTEXT_SNAPSHOT_INTERVAL = 20;
-const CONNECTOR_VERSION = "3.5.0";
+const CONNECTOR_VERSION = "1.0.0";
 const SERVICE_MODE = process.env.AGENT_HUB_SERVICE_MODE || "manual";
 
 function isTrustedPrivateHost(hostname) {
@@ -83,6 +87,7 @@ fs.mkdirSync(STATE_DIR, {recursive: true});
 const SAFE_AGENT_ID = AGENT_ID.replace(/[^a-zA-Z0-9_-]/g, "-");
 const PROCESSED_FILE = path.join(STATE_DIR, `${SAFE_AGENT_ID}-processed.json`);
 const CONTEXT_STATE_FILE = path.join(STATE_DIR, `${SAFE_AGENT_ID}-context.json`);
+const SESSION_STATE_FILE = path.join(STATE_DIR, `${SAFE_AGENT_ID}-${IS_CODEX ? "codex" : "claude"}-sessions.json`);
 const LOCK_FILE = path.join(STATE_DIR, `${SAFE_AGENT_ID}.lock`);
 const DEVICE_KEY_FILE = path.join(INSTALL_DIR, "device-key.json");
 
@@ -262,7 +267,7 @@ async function report(stage, extra = {}) {
   return api("POST", `/agent/v1/agents/${encodeURIComponent(AGENT_ID)}/connection-report`, {
     stage,
     preflight_status: "ok",
-    runtime_path: OPENCLAW_BIN,
+    runtime_path: RUNTIME_BIN,
     runtime_version: RUNTIME_VERSION,
     runtime_instance: runtimeInstance,
     environment: `${os.platform()}-${os.arch()}`,
@@ -282,7 +287,7 @@ async function register() {
     platform: os.platform() === "win32" ? "windows" : os.platform() === "darwin" ? "macos" : "linux",
     connect_mode: "client",
     device_label: os.hostname(),
-    agent_kind: "openclaw",
+    agent_kind: AGENT_KIND,
     runtime_instance: runtimeInstance,
     runtime_version: RUNTIME_VERSION,
     environment: `${os.platform()}-${os.arch()}`,
@@ -291,15 +296,15 @@ async function register() {
   });
 }
 
-function commandForOpenClaw(args) {
-  const lower = OPENCLAW_BIN.toLowerCase();
+function commandForRuntime(args) {
+  const lower = RUNTIME_BIN.toLowerCase();
   if (process.platform === "win32" && (lower.endsWith(".cmd") || lower.endsWith(".bat"))) {
-    return {command: process.env.ComSpec || "cmd.exe", args: ["/d", "/s", "/c", OPENCLAW_BIN, ...args]};
+    return {command: process.env.ComSpec || "cmd.exe", args: ["/d", "/s", "/c", RUNTIME_BIN, ...args]};
   }
   if (process.platform === "win32" && lower.endsWith(".ps1")) {
-    return {command: "powershell.exe", args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", OPENCLAW_BIN, ...args]};
+    return {command: "powershell.exe", args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", RUNTIME_BIN, ...args]};
   }
-  return {command: OPENCLAW_BIN, args};
+  return {command: RUNTIME_BIN, args};
 }
 
 function runCommand(command, args, timeoutMs) {
@@ -311,7 +316,7 @@ function runCommand(command, args, timeoutMs) {
     child.stderr.on("data", chunk => { stderr += chunk.toString(); });
     const timer = setTimeout(() => {
       child.kill("SIGTERM");
-      reject(new Error(`OpenClaw timed out after ${Math.round(timeoutMs / 1000)} seconds`));
+      reject(new Error(`${RUNTIME_LABEL} timed out after ${Math.round(timeoutMs / 1000)} seconds`));
     }, timeoutMs);
     child.on("error", error => {
       clearTimeout(timer);
@@ -325,17 +330,57 @@ function runCommand(command, args, timeoutMs) {
   });
 }
 
-function extractReply(raw) {
+function extractClaudeReply(raw) {
+  let data;
   try {
-    const data = JSON.parse(raw);
-    const payloads = data?.result?.payloads || [];
-    const texts = payloads.map(item => item?.text).filter(Boolean);
-    if (texts.length) return texts.join("\n\n").trim();
-    const meta = data?.result?.meta?.agentMeta || {};
-    return meta.finalAssistantVisibleText || meta.finalAssistantRawText || data.summary || raw;
+    data = JSON.parse(raw);
   } catch {
-    return raw.trim();
+    return {text: raw.trim(), sessionId: ""};
   }
+  if (data?.is_error) throw new Error(data.result || data.subtype || "Claude Code returned an error");
+  return {
+    text: typeof data?.result === "string" ? data.result.trim() : raw.trim(),
+    sessionId: typeof data?.session_id === "string" ? data.session_id.trim() : "",
+  };
+}
+
+function extractCodexReply(raw) {
+  let sessionId = "";
+  let text = "";
+  let failure = "";
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (event?.type === "thread.started" && typeof event.thread_id === "string") {
+      sessionId = event.thread_id.trim();
+    }
+    if (
+      event?.type === "item.completed"
+      && event.item?.type === "agent_message"
+      && typeof event.item.text === "string"
+    ) {
+      text = event.item.text.trim();
+    }
+    if (event?.type === "turn.failed" || event?.type === "error") {
+      failure = String(event.error?.message || event.message || event.error || "Codex returned an error");
+    }
+  }
+  if (!text && failure) throw new Error(failure.slice(0, 1600));
+  if (!text) throw new Error("Codex did not return an agent message");
+  return {text, sessionId};
+}
+
+const claudeSessions = readJson(SESSION_STATE_FILE, {});
+
+function rememberClaudeSession(conversationId, sessionId) {
+  if (!conversationId || !sessionId || claudeSessions[conversationId] === sessionId) return;
+  claudeSessions[conversationId] = sessionId;
+  writeJson(SESSION_STATE_FILE, claudeSessions);
 }
 
 function buildLegacyPrompt(message, conversationId) {
@@ -457,18 +502,18 @@ async function ack(messageId, contextApplied = true) {
   });
 }
 
-async function runOpenClawPrompt(prompt, conversationId) {
-  const cliArgs = ["agent"];
-  if (runtimeInstance) cliArgs.push("--agent", runtimeInstance);
-  cliArgs.push(
-    "--session-id", conversationId,
-    "--message", prompt,
-    "--json",
-    "--timeout", String(Math.round(CLI_TIMEOUT_MS / 1000)),
-  );
-  const invocation = commandForOpenClaw(cliArgs);
+async function runRuntimePrompt(prompt, conversationId) {
+  const sessionId = claudeSessions[conversationId] || "";
+  const cliArgs = IS_CODEX
+    ? sessionId
+      ? ["exec", "resume", "--skip-git-repo-check", "--json", sessionId, prompt]
+      : ["exec", "--sandbox", "read-only", "--skip-git-repo-check", "--json", prompt]
+    : ["-p", "--output-format", "json", "--permission-mode", "default", ...(sessionId ? ["--resume", sessionId] : []), prompt];
+  const invocation = commandForRuntime(cliArgs);
   const raw = await runCommand(invocation.command, invocation.args, CLI_TIMEOUT_MS + 30_000);
-  return extractReply(raw).trim();
+  const result = IS_CODEX ? extractCodexReply(raw) : extractClaudeReply(raw);
+  rememberClaudeSession(conversationId, result.sessionId);
+  return result.text.trim();
 }
 
 function reloadEndpoints() {
@@ -489,7 +534,7 @@ function reloadEndpoints() {
 async function executeSafeCommand(command) {
   const type = command?.command_type;
   if (type === "probe") {
-    const invocation = commandForOpenClaw(["--version"]);
+    const invocation = commandForRuntime(["--version"]);
     const output = await runCommand(invocation.command, invocation.args, 30_000);
     return {result: {runtime: output.slice(0, 400), hub_url: activeHubUrl}};
   }
@@ -530,7 +575,7 @@ async function processVerification(message) {
   let success = false;
   let error = null;
   try {
-    output = await runOpenClawPrompt(
+    output = await runRuntimePrompt(
       "This is a t聊 health check. Reply with exactly AGENTHUB_READY and nothing else.",
       `${AGENT_ID}-verification`,
     );
@@ -577,14 +622,14 @@ async function processMessage(message) {
   let contextApplied = false;
   try {
     const prompt = await buildPrompt(message, conversationId);
-    const reply = await runOpenClawPrompt(prompt.prompt, conversationId)
-      || "已处理，但 OpenClaw 没有返回可显示的文本。";
+    const reply = await runRuntimePrompt(prompt.prompt, conversationId)
+      || `已处理，但 ${RUNTIME_LABEL} 没有返回可显示的文本。`;
     const sent = await sendMessage(message, "task.result", reply, "result");
     if (!sent.ok) throw new Error(sent.error || "failed to send result");
     rememberContext(conversationId, message, prompt.snapshotUsed, prompt.resolvedDocument);
     contextApplied = true;
   } catch (error) {
-    const text = `OpenClaw 处理失败：${String(error?.message || error).slice(0, 1400)}`;
+    const text = `${RUNTIME_LABEL} 处理失败：${String(error?.message || error).slice(0, 1400)}`;
     const sent = await sendMessage(message, "task.error", text, "error");
     await report("failed", {
       connector_status: "running",
@@ -624,7 +669,7 @@ function applyRuntimeSelection(result) {
     config.runtime_instance = selected;
     writeJson(configFile, config);
   }
-  console.log(`t聊 selected OpenClaw instance: ${selected}`);
+  console.log(`t聊 selected ${RUNTIME_LABEL} runtime: ${selected}`);
 }
 
 async function main() {
@@ -639,7 +684,7 @@ async function main() {
     });
   }
 
-  console.log(`t聊 OpenClaw connector starting: ${AGENT_ID}`);
+  console.log(`t聊 ${RUNTIME_LABEL} connector starting: ${AGENT_ID}`);
   const registered = await register();
   if (!registered.ok) console.log(`Registration pending: ${registered.error || registered.status}`);
   const firstHeartbeat = await heartbeat();

@@ -1,7 +1,7 @@
-# Agent Hub MCP Quickstart
+# t聊 MCP Quickstart
 
 1. 先用一次性邀请完成自动连接和 App 审批。
-2. 在 Agent Hub 的 Agent 详情点击“开启工具能力”。
+2. 在 t聊 的 Agent 详情点击“开启工具能力”。
 3. 让远端 AI 读取本机 `agenthub-mcp-config.json`。
 4. 只合并 `mcpServers.agenthub-<agent-id>`，刷新 MCP。
 5. 调用 `agenthub_status`、`agenthub_heartbeat`、`agenthub_inbox` 验证。

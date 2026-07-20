@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-OpenClaw Agent Hub 客户端
+OpenClaw t聊 客户端
 - 每10秒心跳保持在线
 - 每3秒拉取 inbox 消息
 - 收到消息后触发 OpenClaw 处理
@@ -13,11 +13,70 @@ import os
 import threading
 import subprocess
 import shutil
+import ipaddress
+import socket
+import urllib.parse
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone, timedelta
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+ALLOWED_HUB_NETWORKS = (
+    ipaddress.ip_network((0x0A000000, 8)),
+    ipaddress.ip_network((0xAC100000, 12)),
+    ipaddress.ip_network((0xC0A80000, 16)),
+    ipaddress.ip_network((0x64400000, 10)),
+    ipaddress.ip_network("fc00::/7"),
+)
+
+
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, "redirect refused", headers, fp)
+
+
+HTTP_OPENER = urllib.request.build_opener(
+    urllib.request.ProxyHandler({}),
+    NoRedirectHandler(),
+)
+
+
+def bounded_env_int(name, default, minimum, maximum):
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except ValueError:
+        value = default
+    return max(minimum, min(value, maximum))
+
+
+def is_allowed_hub_address(address):
+    value = ipaddress.ip_address(address)
+    return value.is_loopback or any(value in network for network in ALLOWED_HUB_NETWORKS)
+
+
+def validate_hub_url(value):
+    parsed = urllib.parse.urlsplit(value.strip())
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("t聊 URL only supports http or https")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError("t聊 URL cannot contain credentials, query, or fragment")
+    if not parsed.hostname or parsed.path not in {"", "/"}:
+        raise ValueError("t聊 URL must be an origin without an extra path")
+    try:
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError as exc:
+        raise ValueError("t聊 URL has an invalid port") from exc
+
+    try:
+        addresses = {
+            item[4][0]
+            for item in socket.getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)
+        }
+    except socket.gaierror as exc:
+        raise ValueError(f"t聊 host cannot be resolved: {parsed.hostname}") from exc
+    if not addresses or any(not is_allowed_hub_address(address) for address in addresses):
+        raise ValueError("t聊 must resolve only to loopback, private, or Tailscale addresses")
+    return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
 
 
 def read_default_token():
@@ -33,7 +92,7 @@ def parse_hub_urls():
     raw = os.environ.get("AGENT_HUB_URLS") or os.environ.get("AGENT_HUB_URL") or "http://127.0.0.1:8765"
     urls = []
     for item in raw.replace(";", ",").split(","):
-        url = item.strip().rstrip("/")
+        url = validate_hub_url(item)
         if url and url not in urls:
             urls.append(url)
     return urls or ["http://127.0.0.1:8765"]
@@ -47,10 +106,10 @@ AGENT_NAME = os.environ.get("AGENT_HUB_NAME") or "OpenClaw Local"
 AGENT_ROLE = os.environ.get("AGENT_HUB_ROLE") or "backend"
 INBOX_INTERVAL = 3  # 秒
 HEARTBEAT_INTERVAL = 10  # 秒
-REQUEST_TIMEOUT = int(os.environ.get("AGENT_HUB_TIMEOUT", "10"))
-RECONNECT_INTERVAL = int(os.environ.get("AGENT_HUB_RECONNECT_INTERVAL", "5"))
+REQUEST_TIMEOUT = bounded_env_int("AGENT_HUB_TIMEOUT", 10, 1, 60)
+RECONNECT_INTERVAL = bounded_env_int("AGENT_HUB_RECONNECT_INTERVAL", 5, 1, 300)
 USE_CLI = os.environ.get("OPENCLAW_USE_CLI", "1") != "0"
-CLI_TIMEOUT = int(os.environ.get("OPENCLAW_CLI_TIMEOUT", "600"))
+CLI_TIMEOUT = bounded_env_int("OPENCLAW_CLI_TIMEOUT", 600, 10, 3600)
 OPENCLAW_BIN = os.environ.get("OPENCLAW_BIN", "openclaw")
 
 # 已处理的消息 ID（幂等处理）
@@ -102,10 +161,13 @@ def api_request(method, path, body=None):
     ordered_urls = [ACTIVE_HUB_URL] + [url for url in HUB_URLS if url != ACTIVE_HUB_URL]
     last_error = None
     for hub_url in ordered_urls:
-        url = f"{hub_url}{path}"
+        if not path.startswith(("/api/", "/agent/v1/")):
+            raise ValueError("refusing an unexpected t聊 API path")
+        hub_url = validate_hub_url(hub_url)
+        url = urllib.parse.urljoin(f"{hub_url}/", path.lstrip("/"))
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+            with HTTP_OPENER.open(req, timeout=REQUEST_TIMEOUT) as resp:
                 ACTIVE_HUB_URL = hub_url
                 return json.loads(resp.read().decode())
         except urllib.error.HTTPError as e:
@@ -241,12 +303,43 @@ def extract_cli_reply(raw_text):
 
 
 def openclaw_command_args(base_cmd):
-    resolved = shutil.which(base_cmd) or base_cmd
+    if not base_cmd or any(char in base_cmd for char in ("\0", "\r", "\n")):
+        raise RuntimeError("OPENCLAW_BIN is invalid")
+    resolved = shutil.which(base_cmd)
+    if not resolved and (os.path.isabs(base_cmd) or os.path.dirname(base_cmd)):
+        resolved = os.path.abspath(os.path.expanduser(base_cmd))
+    if not resolved:
+        raise RuntimeError("OpenClaw CLI was not found")
+    resolved = os.path.realpath(resolved)
+    if not os.path.isfile(resolved):
+        raise RuntimeError("OpenClaw CLI path is not a regular file")
+    allowed_names = {"openclaw", "openclaw.exe", "openclaw.ps1", "openclaw.cmd", "openclaw.bat"}
+    if os.path.basename(resolved).lower() not in allowed_names:
+        raise RuntimeError("OPENCLAW_BIN must point to an OpenClaw CLI executable")
+    if os.name != "nt" and not os.access(resolved, os.X_OK):
+        raise RuntimeError("OpenClaw CLI is not executable")
+
     suffix = os.path.splitext(resolved)[1].lower()
     if os.name == "nt" and suffix in (".cmd", ".bat"):
-        return ["cmd.exe", "/c", resolved]
+        powershell_script = os.path.splitext(resolved)[0] + ".ps1"
+        if not os.path.isfile(powershell_script):
+            raise RuntimeError("OpenClaw .cmd wrappers are refused; configure OPENCLAW_BIN to openclaw.ps1")
+        resolved = powershell_script
+        suffix = ".ps1"
     if os.name == "nt" and suffix == ".ps1":
-        return ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", resolved]
+        powershell = shutil.which("pwsh") or shutil.which("powershell.exe") or shutil.which("powershell")
+        if not powershell:
+            raise RuntimeError("PowerShell is required to run openclaw.ps1")
+        return [
+            os.path.realpath(powershell),
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            resolved,
+        ]
     return [resolved]
 
 
@@ -268,7 +361,7 @@ def run_openclaw_cli(conversation_id, msg):
     rules_text = "\n".join(f"{idx + 1}. {rule}" for idx, rule in enumerate(rules))
     context_text = "\n".join(context_lines) if context_lines else "暂无。"
     prompt = (
-        f"你正在 Agent Hub 多 AI 项目组群聊中工作。\n"
+        f"你正在 t聊 多 AI 项目组群聊中工作。\n"
         f"群聊 task_id: {task_id}\n"
         f"群聊标题: {hub_instruction.get('task_title', '')}\n"
         f"群成员: {', '.join(participants) if participants else '未知'}\n"
@@ -300,9 +393,11 @@ def run_openclaw_cli(conversation_id, msg):
         str(CLI_TIMEOUT),
     ]
     print(f"   🤖 调用 OpenClaw CLI: {' '.join(cmd[:3])} session={conversation_id}")
+    # The executable is resolved to a fixed OpenClaw basename and no shell is used.
     completed = subprocess.run(
-        cmd,
+        cmd,  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
         cwd=os.path.expanduser("~/.openclaw/workspace"),
+        shell=False,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -519,7 +614,7 @@ def wait_for_hub():
 def main():
     acquire_single_instance()
     processed_messages.update(load_processed_messages())
-    print(f"🚀 OpenClaw Agent Hub 客户端启动")
+    print(f"🚀 OpenClaw t聊 客户端启动")
     print(f"   Agent: {AGENT_ID}")
     print(f"   Name: {AGENT_NAME}")
     print(f"   Hub candidates: {', '.join(HUB_URLS)}")
