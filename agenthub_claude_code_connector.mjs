@@ -30,6 +30,19 @@ const INBOX_INTERVAL_MS = 2_500;
 const CONTEXT_SNAPSHOT_INTERVAL = 20;
 const CONNECTOR_VERSION = "1.0.0";
 const SERVICE_MODE = process.env.AGENT_HUB_SERVICE_MODE || "manual";
+const CODEX_HTTP_ONLY = !["0", "false", "no", "off"].includes(
+  String(process.env.AGENT_HUB_CODEX_HTTP_ONLY || "1").trim().toLowerCase(),
+);
+const CODEX_HTTP_PROVIDER_ARGS = CODEX_HTTP_ONLY
+  ? [
+      "-c", 'model_provider="agenthub-http"',
+      "-c", 'model_providers.agenthub-http.name="Agent Hub ChatGPT HTTP"',
+      "-c", 'model_providers.agenthub-http.base_url="https://chatgpt.com/backend-api/codex"',
+      "-c", 'model_providers.agenthub-http.wire_api="responses"',
+      "-c", "model_providers.agenthub-http.requires_openai_auth=true",
+      "-c", "model_providers.agenthub-http.supports_websockets=false",
+    ]
+  : [];
 
 function isTrustedPrivateHost(hostname) {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
@@ -314,6 +327,9 @@ function runCommand(command, args, timeoutMs) {
     let stderr = "";
     child.stdout.on("data", chunk => { stdout += chunk.toString(); });
     child.stderr.on("data", chunk => { stderr += chunk.toString(); });
+    // Codex appends piped stdin to the prompt. This connector never sends stdin,
+    // so close the pipe immediately instead of leaving the CLI waiting for EOF.
+    child.stdin.end();
     const timer = setTimeout(() => {
       child.kill("SIGTERM");
       reject(new Error(`${RUNTIME_LABEL} timed out after ${Math.round(timeoutMs / 1000)} seconds`));
@@ -506,8 +522,8 @@ async function runRuntimePrompt(prompt, conversationId) {
   const sessionId = claudeSessions[conversationId] || "";
   const cliArgs = IS_CODEX
     ? sessionId
-      ? ["exec", "resume", "--skip-git-repo-check", "--json", sessionId, prompt]
-      : ["exec", "--sandbox", "read-only", "--skip-git-repo-check", "--json", prompt]
+      ? ["exec", ...CODEX_HTTP_PROVIDER_ARGS, "resume", "--skip-git-repo-check", "--json", sessionId, prompt]
+      : ["exec", ...CODEX_HTTP_PROVIDER_ARGS, "--sandbox", "read-only", "--skip-git-repo-check", "--json", prompt]
     : ["-p", "--output-format", "json", "--permission-mode", "default", ...(sessionId ? ["--resume", sessionId] : []), prompt];
   const invocation = commandForRuntime(cliArgs);
   const raw = await runCommand(invocation.command, invocation.args, CLI_TIMEOUT_MS + 30_000);
@@ -536,7 +552,9 @@ async function executeSafeCommand(command) {
   if (type === "probe") {
     const invocation = commandForRuntime(["--version"]);
     const output = await runCommand(invocation.command, invocation.args, 30_000);
-    return {result: {runtime: output.slice(0, 400), hub_url: activeHubUrl}};
+    // 只取版本号第一行，避免多行警告被服务端拒绝
+    const versionLine = output.split('\n').find(l => /^\d+\.\d+/.test(l)) || output.slice(0, 64);
+    return {result: {runtime: versionLine.slice(0, 128), hub_url: activeHubUrl}};
   }
   if (type === "reload_endpoints") return {result: reloadEndpoints()};
   if (type === "retry_delivery") return {result: {ready: true}};

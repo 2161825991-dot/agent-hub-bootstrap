@@ -22,7 +22,7 @@
     "WINDOWS_E2E_ACCEPTANCE.md": "882a89b9f7437b47641d753ac553443ce6c18da24026074549463032f21d4529",
     "WINDOWS_MCP_AGENT_PROMPT.md": "08f35cdb036301d87f7230a1b77798f965726a941bb03b875af4609bced13e70",
     "agenthub.env.example": "6fe858d784cbeca6dda0c57ada9633292bfbdb7d68f004ee55332b5c6cb3c467",
-    "agenthub_claude_code_connector.mjs": "b0162347754fd0aaf2aecba7416d02ac82f50f86eb94427d61824e59cd08ef2a",
+    "agenthub_claude_code_connector.mjs": "a56a32a1e99aa003ba677522689aa3e9c25d843bd94397a90bc37577103111ad",
     "agenthub_codex_connector.mjs": "4a4feff152a67d9995f3ff5744302076e87397d8352042080ecd3e01b3cfdd48",
     "agenthub_hermes_connector.py": "78ba8ea1ec39798be37394206d273a2f4dbc976f2e44b92df7187e7641e28428",
     "agenthub_mcp_server.py": "c1f863cc6c2b259a4c786932cddfdc17ca93066af194a2e2fcde2aeeb77071ec",
