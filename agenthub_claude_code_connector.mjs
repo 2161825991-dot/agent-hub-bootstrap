@@ -28,7 +28,7 @@ const CLI_TIMEOUT_MS = Number(process.env.AGENT_HUB_CLI_TIMEOUT || 900) * 1000;
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const INBOX_INTERVAL_MS = 2_500;
 const CONTEXT_SNAPSHOT_INTERVAL = 20;
-const CONNECTOR_VERSION = "1.0.0";
+const CONNECTOR_VERSION = "1.0.1";
 const SERVICE_MODE = process.env.AGENT_HUB_SERVICE_MODE || "manual";
 const CODEX_HTTP_ONLY = !["0", "false", "no", "off"].includes(
   String(process.env.AGENT_HUB_CODEX_HTTP_ONLY || "1").trim().toLowerCase(),
@@ -101,8 +101,12 @@ const SAFE_AGENT_ID = AGENT_ID.replace(/[^a-zA-Z0-9_-]/g, "-");
 const PROCESSED_FILE = path.join(STATE_DIR, `${SAFE_AGENT_ID}-processed.json`);
 const CONTEXT_STATE_FILE = path.join(STATE_DIR, `${SAFE_AGENT_ID}-context.json`);
 const SESSION_STATE_FILE = path.join(STATE_DIR, `${SAFE_AGENT_ID}-${IS_CODEX ? "codex" : "claude"}-sessions.json`);
+const CODEX_VISIBLE_STATE_FILE = path.join(STATE_DIR, `${SAFE_AGENT_ID}-codex-visible-sessions.json`);
 const LOCK_FILE = path.join(STATE_DIR, `${SAFE_AGENT_ID}.lock`);
 const DEVICE_KEY_FILE = path.join(INSTALL_DIR, "device-key.json");
+const CODEX_REVEAL_THREADS = !["0", "false", "no", "off"].includes(
+  String(process.env.AGENT_HUB_CODEX_REVEAL_THREADS || "1").trim().toLowerCase(),
+);
 
 function readJson(file, fallback) {
   try {
@@ -392,11 +396,197 @@ function extractCodexReply(raw) {
 }
 
 const claudeSessions = readJson(SESSION_STATE_FILE, {});
+const codexVisibleSessions = IS_CODEX ? readJson(CODEX_VISIBLE_STATE_FILE, {}) : {};
+const taskTitles = new Map();
 
 function rememberClaudeSession(conversationId, sessionId) {
   if (!conversationId || !sessionId || claudeSessions[conversationId] === sessionId) return;
   claudeSessions[conversationId] = sessionId;
   writeJson(SESSION_STATE_FILE, claudeSessions);
+}
+
+function rememberCodexVisibleSession(conversationId, threadId, title) {
+  codexVisibleSessions[conversationId] = {
+    thread_id: threadId,
+    title,
+    updated_at: new Date().toISOString(),
+  };
+  writeJson(CODEX_VISIBLE_STATE_FILE, codexVisibleSessions);
+}
+
+function groupNameFromContext(content) {
+  const match = String(content || "").match(/^\s*-\s*(?:名称|Name)\s*:\s*(.+?)\s*$/mi);
+  return match?.[1]?.trim() || "";
+}
+
+function taskIdFromConversation(conversationId) {
+  return String(conversationId || "").match(/-task-(\d+)$/)?.[1] || "";
+}
+
+function codexThreadTitle(message = {}, resolvedDocument = null, conversationId = "") {
+  const taskId = String(message.task_id || taskIdFromConversation(conversationId));
+  const name = groupNameFromContext(resolvedDocument?.content)
+    || String(message.hub_instruction?.task_title || message.task_title || taskTitles.get(taskId) || "").trim()
+    || (taskId ? `群聊 #${taskId}` : "群聊");
+  return (name.startsWith("t聊") ? name : `t聊 · ${name}`).slice(0, 120);
+}
+
+function revealCodexThread(threadId) {
+  if (!CODEX_REVEAL_THREADS || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(threadId)) return;
+  const url = `codex://threads/${threadId}`;
+  let child;
+  if (process.platform === "darwin") {
+    child = spawn("/usr/bin/open", [url], {detached: true, stdio: "ignore"});
+  } else if (process.platform === "win32") {
+    child = spawn(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", "start", "", url], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+  } else {
+    child = spawn("xdg-open", [url], {detached: true, stdio: "ignore"});
+  }
+  child.on("error", () => {});
+  child.unref();
+}
+
+function forkCodexThreadForDesktop(sourceThreadId, title) {
+  return new Promise((resolve, reject) => {
+    // This app-server only registers provider metadata, forks and names
+    // persisted threads; it never calls a model.
+    const invocation = commandForRuntime(["app-server", "--stdio"]);
+    const child = spawn(invocation.command, invocation.args, {
+      cwd: INSTALL_DIR,
+      windowsHide: true,
+      env: process.env,
+    });
+    let stdout = "";
+    let stderr = "";
+    let forkedThreadId = "";
+    let settled = false;
+    const finish = (error = null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { child.stdin.end(); } catch {}
+      if (error) reject(error);
+      else resolve(forkedThreadId);
+    };
+    const send = payload => child.stdin.write(`${JSON.stringify(payload)}\n`);
+    const sendForkRequest = () => {
+      const params = {
+        threadId: sourceThreadId,
+        cwd: INSTALL_DIR,
+        sandbox: "read-only",
+        approvalPolicy: "never",
+        threadSource: "user",
+      };
+      if (CODEX_HTTP_ONLY) params.modelProvider = "agenthub-http";
+      send({id: 2, method: "thread/fork", params});
+    };
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      finish(new Error("Codex desktop thread migration timed out"));
+    }, 30_000);
+    child.stderr.on("data", chunk => { stderr += chunk.toString(); });
+    child.stdout.on("data", chunk => {
+      stdout += chunk.toString();
+      for (;;) {
+        const newline = stdout.indexOf("\n");
+        if (newline < 0) break;
+        const line = stdout.slice(0, newline).trim();
+        stdout = stdout.slice(newline + 1);
+        if (!line) continue;
+        let message;
+        try {
+          message = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (message.id === 1) {
+          if (message.error) return finish(new Error(String(message.error.message || "Codex app-server initialize failed")));
+          send({method: "initialized", params: {}});
+          if (CODEX_HTTP_ONLY) {
+            send({
+              id: 4,
+              method: "config/batchWrite",
+              params: {
+                reloadUserConfig: true,
+                edits: [{
+                  keyPath: "model_providers.agenthub-http",
+                  mergeStrategy: "upsert",
+                  value: {
+                    name: "Agent Hub ChatGPT HTTP",
+                    base_url: "https://chatgpt.com/backend-api/codex",
+                    wire_api: "responses",
+                    requires_openai_auth: true,
+                    supports_websockets: false,
+                  },
+                }],
+              },
+            });
+          } else {
+            sendForkRequest();
+          }
+        } else if (message.id === 4) {
+          if (message.error) console.log(`Codex provider registration warning: ${message.error.message || "unknown error"}`);
+          sendForkRequest();
+        } else if (message.id === 2) {
+          if (message.error) return finish(new Error(String(message.error.message || "Codex thread/fork failed")));
+          forkedThreadId = String(message.result?.thread?.id || "").trim();
+          if (!forkedThreadId) return finish(new Error("Codex thread/fork returned no thread id"));
+          send({id: 3, method: "thread/name/set", params: {threadId: forkedThreadId, name: title}});
+        } else if (message.id === 3) {
+          if (message.error) console.log(`Codex desktop thread naming warning: ${message.error.message || "unknown error"}`);
+          finish();
+        }
+      }
+    });
+    child.on("error", finish);
+    child.on("close", code => {
+      if (!settled) finish(new Error((stderr || `Codex app-server exited with code ${code}`).trim().slice(0, 1600)));
+    });
+    send({
+      id: 1,
+      method: "initialize",
+      params: {clientInfo: {name: "t-agent-hub", title: "t聊", version: CONNECTOR_VERSION}, capabilities: {}},
+    });
+  });
+}
+
+async function ensureCodexDesktopThread(conversationId, sourceThreadId, title) {
+  if (!IS_CODEX || !sourceThreadId || conversationId.endsWith("-verification")) return sourceThreadId;
+  const visible = codexVisibleSessions[conversationId];
+  if (visible?.thread_id === sourceThreadId) return sourceThreadId;
+  try {
+    const desktopThreadId = await forkCodexThreadForDesktop(sourceThreadId, title);
+    rememberClaudeSession(conversationId, desktopThreadId);
+    rememberCodexVisibleSession(conversationId, desktopThreadId, title);
+    revealCodexThread(desktopThreadId);
+    console.log(`t聊 linked ${conversationId} to Codex desktop thread ${desktopThreadId}`);
+    return desktopThreadId;
+  } catch (error) {
+    console.log(`Codex desktop thread migration warning: ${String(error?.message || error).slice(0, 800)}`);
+    return sourceThreadId;
+  }
+}
+
+async function loadTaskTitles() {
+  const response = await api("GET", "/agent/v1/tasks");
+  if (!response.ok) return;
+  for (const task of response.tasks || []) {
+    if (task?.id != null && task?.title) taskTitles.set(String(task.id), String(task.title));
+  }
+}
+
+async function backfillCodexDesktopThreads() {
+  if (!IS_CODEX) return;
+  await loadTaskTitles();
+  for (const [conversationId, sourceThreadId] of Object.entries(claudeSessions)) {
+    if (conversationId.endsWith("-verification") || codexVisibleSessions[conversationId]?.thread_id === sourceThreadId) continue;
+    const title = codexThreadTitle({}, null, conversationId);
+    await ensureCodexDesktopThread(conversationId, sourceThreadId, title);
+  }
 }
 
 function buildLegacyPrompt(message, conversationId) {
@@ -518,7 +708,7 @@ async function ack(messageId, contextApplied = true) {
   });
 }
 
-async function runRuntimePrompt(prompt, conversationId) {
+async function runRuntimePrompt(prompt, conversationId, threadTitle = "") {
   const sessionId = claudeSessions[conversationId] || "";
   const cliArgs = IS_CODEX
     ? sessionId
@@ -529,6 +719,9 @@ async function runRuntimePrompt(prompt, conversationId) {
   const raw = await runCommand(invocation.command, invocation.args, CLI_TIMEOUT_MS + 30_000);
   const result = IS_CODEX ? extractCodexReply(raw) : extractClaudeReply(raw);
   rememberClaudeSession(conversationId, result.sessionId);
+  if (IS_CODEX && threadTitle) {
+    await ensureCodexDesktopThread(conversationId, result.sessionId || sessionId, threadTitle);
+  }
   return result.text.trim();
 }
 
@@ -640,7 +833,11 @@ async function processMessage(message) {
   let contextApplied = false;
   try {
     const prompt = await buildPrompt(message, conversationId);
-    const reply = await runRuntimePrompt(prompt.prompt, conversationId)
+    const reply = await runRuntimePrompt(
+      prompt.prompt,
+      conversationId,
+      IS_CODEX ? codexThreadTitle(message, prompt.resolvedDocument, conversationId) : "",
+    )
       || `已处理，但 ${RUNTIME_LABEL} 没有返回可显示的文本。`;
     const sent = await sendMessage(message, "task.result", reply, "result");
     if (!sent.ok) throw new Error(sent.error || "failed to send result");
@@ -707,6 +904,7 @@ async function main() {
   if (!registered.ok) console.log(`Registration pending: ${registered.error || registered.status}`);
   const firstHeartbeat = await heartbeat();
   if (!firstHeartbeat?.ready) await report("awaiting_approval", {approval_status: "pending"});
+  else await backfillCodexDesktopThreads();
   const heartbeatTimer = setInterval(() => void heartbeat(), HEARTBEAT_INTERVAL_MS);
   heartbeatTimer.unref();
 
