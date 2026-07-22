@@ -25,6 +25,7 @@ OpenClaw: START_HERE_FOR_OPENCLAW.md
 Hermes:   START_HERE_FOR_HERMES.md
 Claude Code: START_HERE_FOR_CLAUDE_CODE.md
 Codex: START_HERE_FOR_CODEX.md
+Codex 原生任务绑定: CODEX_NATIVE_THREAD_BINDING.md
 机器索引: connect.json
 ```
 
@@ -50,6 +51,7 @@ agenthub_openclaw_connector.mjs OpenClaw 常驻连接器
 agenthub_hermes_connector.py    Hermes 常驻连接器
 agenthub_claude_code_connector.mjs Claude Code 常驻连接器
 agenthub_codex_connector.mjs      Codex 常驻连接器
+CODEX_NATIVE_THREAD_BINDING.md    Codex 原生任务与 t聊群绑定说明
 agenthub_mcp_server.py          可选 MCP stdio server
 START_HERE_FOR_INVITE.md        AI 邀请主流程
 AGENT_OPERATIONS.md             接入后的群聊协作规则

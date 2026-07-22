@@ -12,23 +12,26 @@ import {setTimeout as sleep} from "node:timers/promises";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 const INSTALL_DIR = process.env.AGENT_HUB_INSTALL_DIR || HERE;
+const INSTALL_CONFIG = readJson(path.join(INSTALL_DIR, "agenthub.json"), {});
 const STATE_DIR = path.join(INSTALL_DIR, "state");
 const AGENT_KIND = process.env.AGENT_HUB_KIND === "codex" ? "codex" : "claude-code";
 const IS_CODEX = AGENT_KIND === "codex";
 const RUNTIME_LABEL = IS_CODEX ? "Codex" : "Claude Code";
-const AGENT_ID = process.env.AGENT_HUB_ID || AGENT_KIND;
-const AGENT_NAME = process.env.AGENT_HUB_NAME || RUNTIME_LABEL;
-const AGENT_ROLE = process.env.AGENT_HUB_ROLE || "agent";
-const TOKEN = process.env.AGENT_HUB_TOKEN || "";
-const RUNTIME_BIN = IS_CODEX ? (process.env.CODEX_BIN || "codex") : (process.env.CLAUDE_BIN || "claude");
-let runtimeInstance = process.env.AGENT_HUB_RUNTIME_INSTANCE || "default";
-const RUNTIME_VERSION = process.env.AGENT_HUB_RUNTIME_VERSION || "";
+const AGENT_ID = process.env.AGENT_HUB_ID || INSTALL_CONFIG.agent_id || AGENT_KIND;
+const AGENT_NAME = process.env.AGENT_HUB_NAME || INSTALL_CONFIG.name || RUNTIME_LABEL;
+const AGENT_ROLE = process.env.AGENT_HUB_ROLE || INSTALL_CONFIG.role || "agent";
+const TOKEN = process.env.AGENT_HUB_TOKEN || INSTALL_CONFIG.token || "";
+const RUNTIME_BIN = IS_CODEX
+  ? (process.env.CODEX_BIN || INSTALL_CONFIG.runtime_path || "codex")
+  : (process.env.CLAUDE_BIN || INSTALL_CONFIG.runtime_path || "claude");
+let runtimeInstance = process.env.AGENT_HUB_RUNTIME_INSTANCE || INSTALL_CONFIG.runtime_instance || "default";
+const RUNTIME_VERSION = process.env.AGENT_HUB_RUNTIME_VERSION || INSTALL_CONFIG.runtime_version || "";
 const REQUEST_TIMEOUT_MS = Number(process.env.AGENT_HUB_TIMEOUT || 15) * 1000;
 const CLI_TIMEOUT_MS = Number(process.env.AGENT_HUB_CLI_TIMEOUT || 900) * 1000;
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const INBOX_INTERVAL_MS = 2_500;
 const CONTEXT_SNAPSHOT_INTERVAL = 20;
-const CONNECTOR_VERSION = "1.0.1";
+const CONNECTOR_VERSION = "1.1.0";
 const SERVICE_MODE = process.env.AGENT_HUB_SERVICE_MODE || "manual";
 const CODEX_HTTP_ONLY = !["0", "false", "no", "off"].includes(
   String(process.env.AGENT_HUB_CODEX_HTTP_ONLY || "1").trim().toLowerCase(),
@@ -79,9 +82,13 @@ function validateHubUrl(value) {
 }
 
 function parseHubUrls() {
-  const raw = process.env.AGENT_HUB_URLS || process.env.AGENT_HUB_URL || "http://127.0.0.1:8765";
+  const raw = process.env.AGENT_HUB_URLS
+    || process.env.AGENT_HUB_URL
+    || INSTALL_CONFIG.hub_urls
+    || INSTALL_CONFIG.hub_url
+    || "http://127.0.0.1:8765";
   const values = [];
-  for (const value of raw.split(/[;,]/)) {
+  for (const value of String(raw).split(/[;,]/)) {
     try {
       values.push(validateHubUrl(value));
     } catch {}
@@ -102,6 +109,7 @@ const PROCESSED_FILE = path.join(STATE_DIR, `${SAFE_AGENT_ID}-processed.json`);
 const CONTEXT_STATE_FILE = path.join(STATE_DIR, `${SAFE_AGENT_ID}-context.json`);
 const SESSION_STATE_FILE = path.join(STATE_DIR, `${SAFE_AGENT_ID}-${IS_CODEX ? "codex" : "claude"}-sessions.json`);
 const CODEX_VISIBLE_STATE_FILE = path.join(STATE_DIR, `${SAFE_AGENT_ID}-codex-visible-sessions.json`);
+const CODEX_NATIVE_BINDINGS_FILE = path.join(STATE_DIR, `${SAFE_AGENT_ID}-codex-native-bindings.json`);
 const LOCK_FILE = path.join(STATE_DIR, `${SAFE_AGENT_ID}.lock`);
 const DEVICE_KEY_FILE = path.join(INSTALL_DIR, "device-key.json");
 const CODEX_REVEAL_THREADS = !["0", "false", "no", "off"].includes(
@@ -397,9 +405,23 @@ function extractCodexReply(raw) {
 
 const claudeSessions = readJson(SESSION_STATE_FILE, {});
 const codexVisibleSessions = IS_CODEX ? readJson(CODEX_VISIBLE_STATE_FILE, {}) : {};
+let codexNativeBindings = IS_CODEX ? readJson(CODEX_NATIVE_BINDINGS_FILE, {}) : {};
 const taskTitles = new Map();
 
+function refreshCodexNativeBindings() {
+  if (!IS_CODEX) return {};
+  codexNativeBindings = readJson(CODEX_NATIVE_BINDINGS_FILE, {});
+  return codexNativeBindings;
+}
+
+function nativeCodexBinding(conversationId) {
+  refreshCodexNativeBindings();
+  const binding = codexNativeBindings[conversationId];
+  return binding?.thread_id ? binding : null;
+}
+
 function rememberClaudeSession(conversationId, sessionId) {
+  if (IS_CODEX && nativeCodexBinding(conversationId)) return;
   if (!conversationId || !sessionId || claudeSessions[conversationId] === sessionId) return;
   claudeSessions[conversationId] = sessionId;
   writeJson(SESSION_STATE_FILE, claudeSessions);
@@ -421,6 +443,23 @@ function groupNameFromContext(content) {
 
 function taskIdFromConversation(conversationId) {
   return String(conversationId || "").match(/-task-(\d+)$/)?.[1] || "";
+}
+
+function normalizeCodexConversationId(value) {
+  const input = String(value || "").trim();
+  if (!input) throw new Error("A t聊 group id or conversation id is required");
+  if (/^\d+$/.test(input)) return `${AGENT_ID}-task-${input}`;
+  if (/^task:\d+$/i.test(input)) return `${AGENT_ID}-task-${input.slice(input.indexOf(":") + 1)}`;
+  if (!/^[a-zA-Z0-9._:-]+$/.test(input)) throw new Error("Invalid t聊 conversation id");
+  return input;
+}
+
+function validateCodexThreadId(value) {
+  const threadId = String(value || "").trim();
+  if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(threadId)) {
+    throw new Error("Codex thread id must be a UUID copied from Codex Desktop");
+  }
+  return threadId;
 }
 
 function codexThreadTitle(message = {}, resolvedDocument = null, conversationId = "") {
@@ -554,8 +593,128 @@ function forkCodexThreadForDesktop(sourceThreadId, title) {
   });
 }
 
+function readCodexThread(threadId) {
+  return new Promise((resolve, reject) => {
+    const invocation = commandForRuntime(["app-server", "--stdio"]);
+    const child = spawn(invocation.command, invocation.args, {
+      cwd: INSTALL_DIR,
+      windowsHide: true,
+      env: process.env,
+    });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const finish = (error = null, thread = null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { child.stdin.end(); } catch {}
+      if (error) reject(error);
+      else resolve(thread);
+    };
+    const send = payload => child.stdin.write(`${JSON.stringify(payload)}\n`);
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      finish(new Error("Codex thread validation timed out"));
+    }, 30_000);
+    child.stderr.on("data", chunk => { stderr += chunk.toString(); });
+    child.stdout.on("data", chunk => {
+      stdout += chunk.toString();
+      for (;;) {
+        const newline = stdout.indexOf("\n");
+        if (newline < 0) break;
+        const line = stdout.slice(0, newline).trim();
+        stdout = stdout.slice(newline + 1);
+        if (!line) continue;
+        let message;
+        try {
+          message = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (message.id === 1) {
+          if (message.error) return finish(new Error(String(message.error.message || "Codex app-server initialize failed")));
+          send({method: "initialized", params: {}});
+          send({id: 20, method: "thread/read", params: {threadId, includeTurns: false}});
+        } else if (message.id === 20) {
+          if (message.error) return finish(new Error(String(message.error.message || "Codex thread/read failed")));
+          const thread = message.result?.thread;
+          if (String(thread?.id || "") !== threadId) return finish(new Error("Codex thread was not found"));
+          finish(null, thread);
+        }
+      }
+    });
+    child.on("error", finish);
+    child.on("close", code => {
+      if (!settled) finish(new Error((stderr || `Codex app-server exited with code ${code}`).trim().slice(0, 1600)));
+    });
+    send({
+      id: 1,
+      method: "initialize",
+      params: {clientInfo: {name: "t-agent-hub", title: "t聊", version: CONNECTOR_VERSION}, capabilities: {}},
+    });
+  });
+}
+
+async function bindNativeCodexThread(groupOrConversationId, requestedThreadId, requestedTitle = "") {
+  if (!IS_CODEX) throw new Error("Native Codex bindings are only available through agenthub_codex_connector.mjs");
+  const conversationId = normalizeCodexConversationId(groupOrConversationId);
+  const threadId = validateCodexThreadId(requestedThreadId);
+  const thread = await readCodexThread(threadId);
+  refreshCodexNativeBindings();
+  const conflictingConversationId = Object.entries(codexNativeBindings).find(
+    ([existingConversationId, binding]) => existingConversationId !== conversationId && binding?.thread_id === threadId,
+  )?.[0];
+  if (conflictingConversationId) {
+    throw new Error(`Codex thread ${threadId} is already bound to ${conflictingConversationId}; unbind it first`);
+  }
+  codexNativeBindings[conversationId] = {
+    thread_id: threadId,
+    title: String(requestedTitle || thread?.name || thread?.title || "Codex native task").trim().slice(0, 120),
+    mode: "native",
+    bound_at: new Date().toISOString(),
+  };
+  writeJson(CODEX_NATIVE_BINDINGS_FILE, codexNativeBindings);
+  revealCodexThread(threadId);
+  return {agent_id: AGENT_ID, conversation_id: conversationId, ...codexNativeBindings[conversationId]};
+}
+
+function unbindNativeCodexThread(groupOrConversationId) {
+  if (!IS_CODEX) throw new Error("Native Codex bindings are only available through agenthub_codex_connector.mjs");
+  const conversationId = normalizeCodexConversationId(groupOrConversationId);
+  refreshCodexNativeBindings();
+  const removed = codexNativeBindings[conversationId] || null;
+  delete codexNativeBindings[conversationId];
+  writeJson(CODEX_NATIVE_BINDINGS_FILE, codexNativeBindings);
+  return {agent_id: AGENT_ID, conversation_id: conversationId, removed};
+}
+
+function listNativeCodexBindings() {
+  refreshCodexNativeBindings();
+  return {agent_id: AGENT_ID, install_dir: INSTALL_DIR, bindings: codexNativeBindings};
+}
+
+async function runCodexManagementCommand(command, args) {
+  if (!command) return false;
+  if (command === "bind-codex-thread") {
+    console.log(JSON.stringify(await bindNativeCodexThread(args[0], args[1], args.slice(2).join(" ")), null, 2));
+    return true;
+  }
+  if (command === "unbind-codex-thread") {
+    console.log(JSON.stringify(unbindNativeCodexThread(args[0]), null, 2));
+    return true;
+  }
+  if (command === "list-codex-bindings") {
+    console.log(JSON.stringify(listNativeCodexBindings(), null, 2));
+    return true;
+  }
+  return false;
+}
+
 async function ensureCodexDesktopThread(conversationId, sourceThreadId, title) {
   if (!IS_CODEX || !sourceThreadId || conversationId.endsWith("-verification")) return sourceThreadId;
+  const nativeBinding = nativeCodexBinding(conversationId);
+  if (nativeBinding) return nativeBinding.thread_id;
   const visible = codexVisibleSessions[conversationId];
   if (visible?.thread_id === sourceThreadId) return sourceThreadId;
   try {
@@ -583,6 +742,7 @@ async function backfillCodexDesktopThreads() {
   if (!IS_CODEX) return;
   await loadTaskTitles();
   for (const [conversationId, sourceThreadId] of Object.entries(claudeSessions)) {
+    if (nativeCodexBinding(conversationId)) continue;
     if (conversationId.endsWith("-verification") || codexVisibleSessions[conversationId]?.thread_id === sourceThreadId) continue;
     const title = codexThreadTitle({}, null, conversationId);
     await ensureCodexDesktopThread(conversationId, sourceThreadId, title);
@@ -709,7 +869,7 @@ async function ack(messageId, contextApplied = true) {
 }
 
 async function runRuntimePrompt(prompt, conversationId, threadTitle = "") {
-  const sessionId = claudeSessions[conversationId] || "";
+  const sessionId = nativeCodexBinding(conversationId)?.thread_id || claudeSessions[conversationId] || "";
   const cliArgs = IS_CODEX
     ? sessionId
       ? ["exec", ...CODEX_HTTP_PROVIDER_ARGS, "resume", "--skip-git-repo-check", "--json", sessionId, prompt]
@@ -926,12 +1086,25 @@ async function main() {
   }
 }
 
-if (process.argv[2] === "keygen") {
-  const key = ensureDeviceKey();
-  console.log(JSON.stringify({key_id: key.key_id, public_key: key.public_key}));
-} else {
-  main().catch(async error => {
-    console.error(String(error?.stack || error));
+async function entryPoint() {
+  const command = process.argv[2] || "";
+  if (await runCodexManagementCommand(command, process.argv.slice(3))) return;
+  if (command === "keygen") {
+    const key = ensureDeviceKey();
+    console.log(JSON.stringify({key_id: key.key_id, public_key: key.public_key}));
+    return;
+  }
+  if (command) {
+    throw new Error(
+      `Unknown connector command: ${command}. Supported commands: bind-codex-thread, unbind-codex-thread, list-codex-bindings, keygen`,
+    );
+  }
+  await main();
+}
+
+entryPoint().catch(async error => {
+  console.error(String(error?.stack || error));
+  if (!process.argv[2]) {
     try {
       await report("failed", {
         connector_status: "stopped",
@@ -940,7 +1113,7 @@ if (process.argv[2] === "keygen") {
         last_error: String(error?.message || error).slice(0, 1600),
       });
     } catch {}
-    releaseLock();
-    process.exit(1);
-  });
-}
+  }
+  releaseLock();
+  process.exit(1);
+});
